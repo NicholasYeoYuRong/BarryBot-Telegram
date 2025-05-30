@@ -2,11 +2,22 @@ from config import API_TOKEN, MODEL_NAME
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from time import sleep
 from threading import Thread
 from collections import defaultdict
+from diffusers import DiffusionPipeline, StableDiffusionPipeline, DPMSolverMultistepScheduler, FluxPipeline
+import torch
+import requests
+from io import BytesIO
 import ollama
 import telebot
+import os
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from contextlib import AsyncExitStack
+import asyncio
+from typing import Any, Dict, List
+from tele_indicators import TypingIndicator, SendingPhotoIndicator
+
 
 # Load environment viariables
 load_dotenv()
@@ -14,22 +25,55 @@ load_dotenv()
 BOT = telebot.TeleBot(token=API_TOKEN)
 MODEL = MODEL_NAME
 
-class TypingIndicator:
-    def __init__(self, bot, chat_id):
-        self.bot = bot
-        self.chat_id = chat_id
-        self._stop_event = False
-        
-    def run(self):
-        while not self._stop_event:
-            try:
-                self.bot.send_chat_action(self.chat_id, 'typing')
-                sleep(2.5)  # Send every 2.5 seconds (Telegram caches for 5s)
-            except:
-                break
-                
-    def stop(self):
-        self._stop_event = True
+
+session = None
+stdio = None
+write = None
+exit_stack = AsyncExitStack()
+
+# Connection to server #
+async def connect_to_server(server_script_path: str = "mcp-server.py"):
+    """Connect to an MCP server.
+    
+    Args:
+        server_scrip_path: Path to the server script.
+    """
+    global session, stdio, write, exit_stack
+
+    #Server configuration
+    server_params = StdioServerParameters(
+        command="python",
+        args=[server_script_path],
+    )
+
+    stdio_transport = await exit_stack.enter_async_context(stdio_client(server_params))
+    stdio, write = stdio_transport
+    session = await exit_stack.enter_async_context(ClientSession(stdio, write))
+
+    # Initialize the connection
+    await session.initialize()
+
+    # List available tools
+    tools_result = await session.list_tools()
+    print("\nConnected to server with tools:")
+    for tool in tools_result.tools:
+        print(f" - {tool.name}: {tool.description}")
+
+# Handling task #
+async def handle_list_items(message):
+    try:
+        await connect_to_server("mcp-server.py")
+
+        tools_result = await session.list_tools()
+        items = "\n".join([f" - {tool.name}: {tool.description}" for tool in tools_result.tools])
+
+        BOT.send_message(message.chat.id, f"Available tools:\n{items}")
+
+        await cleanup()
+    except Exception as e:
+        print(f"🚫 Unexpected error in async handler: {str(e)}")
+
+
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
@@ -44,6 +88,63 @@ def welcome(message):
 def reset_chat(message):
     conversation_history[message.chat.id] = []
     BOT.send_message(message.chat.id, "***CHAT RESETTED***")
+
+@BOT.message_handler(commands=['listItems'])
+def list_Items(message):
+    try:
+
+        asyncio.run(handle_list_items(message))
+
+    except Exception as e:
+        print(f"🚫 Unexpected error: {str(e)}")
+
+
+## GENERATING AN IMAGE NEED ANOTHER IMAGE GENERATION MODEL ##
+## USE HUGGING FACE DIFFUSERS ###
+@BOT.message_handler(commands=['image', 'draw'])
+def generate_image(message):
+    try:
+        prompt = message.text.replace('/image', '').replace('/draw', '').strip()
+        if not prompt:
+            BOT.reply_to(message, "Please describe what you want me to draw after the command")
+            return
+        
+        # Show typing indicator
+        sending = SendingPhotoIndicator(BOT, message.chat.id)
+        s = Thread(target=sending.run)
+        s.start()
+
+        wait_msg = BOT.reply_to(message, "🖌️ Generating your image... (30-60 seconds)")
+
+        DIFFUSER_MODEL = "sd-legacy/stable-diffusion-v1-5" ## TEMPORARY MODEL FOR NOW, TO USE black-forest-labs/FLUX.1-dev IN FUTURE ##
+
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+        torch.backends.cuda.enable_flash_sdp(True) 
+
+        # Load pipeline with optimizations
+        pipe = StableDiffusionPipeline.from_pretrained(DIFFUSER_MODEL, torch_dtype=torch.float16, variant="fp16", safety_checker=None)
+        pipe = pipe.to("cuda")
+        torch.cuda.empty_cache()
+        
+        image = pipe(
+            prompt=prompt,
+            height=512,  
+            width=512,
+        ).images[0]
+
+        # Convert to bytes and send
+        img_bytes = BytesIO()
+        image.save(img_bytes, format='PNG')
+        img_bytes.seek(0)
+        
+        BOT.delete_message(chat_id=message.chat.id, message_id=wait_msg.message_id)
+        BOT.send_photo(message.chat.id, img_bytes)
+        sending.stop()
+        s.join()
+    
+    except Exception as e:
+        BOT.reply_to(message, f"🚫 Unexpected error: {str(e)}")
+
 
 # REPLYING TO USER MESSAGE #
 @BOT.message_handler(func=lambda message:True)
@@ -95,6 +196,10 @@ def reply_func(message):
             typing.stop()
             t.join()
 
+async def cleanup():
+    """Clean up resources."""
+    global exit_stack
+    await exit_stack.aclose()
 
-
-BOT.polling()
+if __name__ == "__main__":
+    BOT.polling()
