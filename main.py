@@ -1,4 +1,4 @@
-from config import API_TOKEN, MODEL_NAME
+from config import API_TOKEN, MODEL_NAME, ICAL_URL
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -17,6 +17,11 @@ from contextlib import AsyncExitStack
 import asyncio
 from typing import Any, Dict, List
 from tele_indicators import TypingIndicator, SendingPhotoIndicator
+import threading
+from pathlib import Path
+from datetime import datetime
+import re
+from telebot import types
 
 
 # Load environment viariables
@@ -25,58 +30,91 @@ load_dotenv()
 BOT = telebot.TeleBot(token=API_TOKEN)
 MODEL = MODEL_NAME
 
+mcpmanager = None
 
-session = None
-stdio = None
-write = None
-exit_stack = AsyncExitStack()
+class McpManager:
+    def __init__(self):
+        self.session = None
+        self.loop = asyncio.new_event_loop()
+        self.connected = threading.Event()
+        self.tools: List[Any] = []
+        self.server_thread = None
 
-# Connection to server #
-async def connect_to_server(server_script_path: str = "mcp-server.py"):
-    """Connect to an MCP server.
+    async def _connect(self , server_params: StdioServerParameters):
+        """Async connection handler"""
+        try:
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    self.session = session
+                    await session.initialize()
+
+                    # Cache tools list
+                    tools_result = await session.list_tools()
+                    self.tools = tools_result.tools
+                    print("\nConnected to server with tools:")
+                    for tool in self.tools:
+                        print(f" - {tool.name}: {tool.description}")
+
+                    self.connected.set()
+
+                    # Keep conenction alive
+                    while True:
+                        await asyncio.sleep(1)
+        
+        except Exception as e:
+            print(f"MCP connection error: {str(e)}")
+            self.connected.clear()
     
-    Args:
-        server_scrip_path: Path to the server script.
-    """
-    global session, stdio, write, exit_stack
+    def start_connection(self, server_params: StdioServerParameters):
+        """Start connection in background thread"""
+        def run():
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self._connect(server_params))
 
-    #Server configuration
-    server_params = StdioServerParameters(
-        command="python",
-        args=[server_script_path],
-    )
+        if not self.server_thread or not self.server_thread.is_alive():
+            self.server_thread = threading.Thread(target=run, daemon=True)
+            self.server_thread.start()
 
-    stdio_transport = await exit_stack.enter_async_context(stdio_client(server_params))
-    stdio, write = stdio_transport
-    session = await exit_stack.enter_async_context(ClientSession(stdio, write))
+    def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
+        """Synchronous wrapper for tool calls"""
+        if not self.connected.is_set():
+            raise ConnectionError("Not connected to MCP server")
 
-    # Initialize the connection
-    await session.initialize()
+        future = asyncio.run_coroutine_threadsafe(
+            self.session.call_tool(tool_name, arguments=arguments),
+            self.loop
+        )    
+        return future.result()
+    
+mcp_manager = McpManager()
 
-    # List available tools
-    tools_result = await session.list_tools()
-    print("\nConnected to server with tools:")
-    for tool in tools_result.tools:
-        print(f" - {tool.name}: {tool.description}")
+server_params = StdioServerParameters(
+    command="uv",
+    args=["run", "python", "mcp-server.py"],
+    cwd=str(Path.cwd())
+)
 
-# Handling task #
-async def handle_list_items(message):
-    try:
-        await connect_to_server("mcp-server.py")
-
-        tools_result = await session.list_tools()
-        items = "\n".join([f" - {tool.name}: {tool.description}" for tool in tools_result.tools])
-
-        BOT.send_message(message.chat.id, f"Available tools:\n{items}")
-
-        await cleanup()
-    except Exception as e:
-        print(f"🚫 Unexpected error in async handler: {str(e)}")
-
-
+mcp_manager.start_connection(server_params)
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
+
+
+def extract_datetime(event_text):
+    return event_text.split(" at ")[-1]
+
+def format_event(event_text):
+    title_part, datetime_part = event_text.split(" at ")
+
+    event_time = datetime.fromisoformat(datetime_part)
+
+    formatted_date = event_time.strftime("%d %B %Y")
+    formatted_time = event_time.strftime("%H:%M")
+    day_of_week = event_time.strftime("%A")
+
+    return f"""Event: {title_part}
+  Date: {formatted_date} ({day_of_week})
+  Time: {formatted_time}"""
 
 # /start #
 @BOT.message_handler(commands=['start'])
@@ -92,11 +130,269 @@ def reset_chat(message):
 @BOT.message_handler(commands=['listItems'])
 def list_Items(message):
     try:
-
-        asyncio.run(handle_list_items(message))
+        if not mcp_manager.connected.is_set():
+            BOT.send_message("⚠️ Connecting to server...")
+            return
+        
+        items = "\n".join([f" - {tool.name}: {tool.description}"
+                           for tool in mcp_manager.tools])
+        BOT.send_message(message.chat.id, f"Available tools:\n{items}")
 
     except Exception as e:
         print(f"🚫 Unexpected error: {str(e)}")
+
+@BOT.message_handler(commands=['addition'])
+def addition_tool(message):
+    try:
+        
+        prompt = message.text.replace('/addition', '').strip()
+        number = prompt.split('+')
+        if not prompt:
+            BOT.send_message(message.chat.id, "Please specify the 2 number addition equation. Eg. '1 + 1' ")
+            return
+        
+        a = int(number[0].strip())
+        b = int(number[1].strip())
+
+        result = mcp_manager.call_tool_sync("add", {"a": a, "b": b})
+        BOT.send_message(message.chat.id, f"{a} + {b} = {result.content[0].text}")
+
+
+    except Exception as e:
+        print(f"🚫 Unexpected error: {str(e)}")
+
+@BOT.message_handler(commands=['myevents'])
+def list_calendar(message):
+    try:
+
+        result = mcp_manager.call_tool_sync("get_ical_events", {
+            "ical_url": ICAL_URL,
+            "max_results": 6
+        })
+
+        current_time  = datetime.now().astimezone()
+
+        data = [item for item in result.content]
+
+        future_events = []
+        for event in data:
+            event_time_str = extract_datetime(event.text)
+            event_time = datetime.fromisoformat(event_time_str)
+            if event_time > current_time:
+                future_events.append((event_time, event.text))
+        
+        future_events.sort()
+
+        formatted_events = []
+        for i, (event_time, event_text) in enumerate(future_events, 1):
+            formatted_events.append(
+                f"SCHEDULE {i}:\n"
+                f"  {format_event(event_text)}")
+
+        structured_events = "\n\n".join(formatted_events)
+
+        BOT.send_message(message.chat.id, f"===YOUR UPCOMING SCHEDULES===\n\n{structured_events}")
+        
+
+    except Exception as e:
+        print(f"🚫 Unexpected error: {str(e)}")
+
+# Add with other state tracking variables
+user_states = {}  # Track conversation state
+event_data = {}    # Store temporary event data
+
+@BOT.message_handler(commands=['addevent'])
+def start_add_event(message):
+    chat_id = message.chat.id
+    user_states[chat_id] = 'awaiting_event_name'
+    event_data[chat_id] = {'duration': 1.0}  # Set default duration
+    
+    BOT.send_message(
+        chat_id,
+        "Let's add an event!\n\n"
+        "Please send me the event name:",
+        reply_markup=types.ForceReply(selective=True)
+    )
+
+@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_event_name')
+def handle_event_name(message):
+    chat_id = message.chat.id
+    event_data[chat_id]['name'] = message.text
+    user_states[chat_id] = 'awaiting_datetime'
+    
+    BOT.send_message(
+        chat_id,
+        "📅 When is this happening?\n"
+        "Examples:\n"
+        "- Tomorrow 2pm\n"
+        "- 2023-12-25 14:30\n"
+        "- Next Friday 3pm",
+        reply_markup=types.ForceReply(selective=True)
+    )
+
+@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_datetime')
+def handle_datetime(message):
+    chat_id = message.chat.id
+    event_data[chat_id]['start_time'] = message.text
+    user_states[chat_id] = 'awaiting_duration'
+    
+    # Create inline skip button
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Skip (use 1 hour)", callback_data="skip_duration"))
+    
+    BOT.send_message(
+        chat_id,
+        "⏳ How long will it last in hours? (Default: 1 hour)",
+        reply_markup=markup
+    )
+
+@BOT.callback_query_handler(func=lambda call: call.data == "skip_duration")
+def skip_duration(call):
+    chat_id = call.message.chat.id
+    user_states[chat_id] = 'awaiting_description'
+    
+    # Create inline skip button
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Skip description", callback_data="skip_description"))
+    
+    BOT.edit_message_text(
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        text="⏳ Duration set to default 1 hour"
+    )
+    
+    BOT.send_message(
+        chat_id,
+        "📝 Any description? (Optional)",
+        reply_markup=markup
+    )
+
+@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_duration')
+def handle_duration(message):
+    chat_id = message.chat.id
+    try:
+        event_data[chat_id]['duration'] = float(message.text)
+    except ValueError:
+        BOT.send_message(chat_id, "⚠️ Please send a number (like 1 or 1.5)")
+        return
+    
+    user_states[chat_id] = 'awaiting_description'
+    
+    # Create inline skip button
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Skip description", callback_data="skip_description"))
+    
+    BOT.send_message(
+        chat_id,
+        "📝 Any description? (Optional)",
+        reply_markup=markup
+    )
+
+@BOT.callback_query_handler(func=lambda call: call.data == "skip_description")
+def skip_description(call):
+    chat_id = call.message.chat.id
+    event_data[chat_id]['description'] = ""
+    user_states[chat_id] = 'awaiting_location'
+    
+    # Create inline skip button
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Skip location", callback_data="skip_location"))
+    
+    BOT.edit_message_text(
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        text="📝 Description skipped"
+    )
+    
+    BOT.send_message(
+        chat_id,
+        "📍 Location? (Optional)",
+        reply_markup=markup
+    )
+
+@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_description')
+def handle_description(message):
+    chat_id = message.chat.id
+    event_data[chat_id]['description'] = message.text
+    user_states[chat_id] = 'awaiting_location'
+    
+    # Create inline skip button
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Skip location", callback_data="skip_location"))
+    
+    BOT.send_message(
+        chat_id,
+        "📍 Location? (Optional)",
+        reply_markup=markup
+    )
+
+@BOT.callback_query_handler(func=lambda call: call.data == "skip_location")
+def skip_location(call):
+    chat_id = call.message.chat.id
+    event_data[chat_id]['location'] = ""
+    
+    BOT.edit_message_text(
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        text="📍 Location skipped"
+    )
+    
+    confirm_and_add_event(chat_id)
+
+@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_location')
+def handle_location(message):
+    chat_id = message.chat.id
+    event_data[chat_id]['location'] = message.text
+    confirm_and_add_event(chat_id)
+
+def confirm_and_add_event(chat_id):
+    # Format confirmation message
+    event = event_data[chat_id]
+    confirm_msg = (
+        "✅ Please confirm:\n\n"
+        f"Event: {event['name']}\n"
+        f"Time: {event['start_time']}\n"
+        f"Duration: {event['duration']} hours\n"
+        f"Description: {event.get('description', 'None')}\n"
+        f"Location: {event.get('location', 'None')}\n\n"
+        "Is this correct?"
+    )
+    
+    # Send confirmation with buttons
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("Yes", callback_data="event_confirm_yes"),
+        types.InlineKeyboardButton("No", callback_data="event_confirm_no")
+    )
+    
+    BOT.send_message(chat_id, confirm_msg, reply_markup=markup)
+    user_states[chat_id] = 'awaiting_confirmation'
+
+@BOT.callback_query_handler(func=lambda call: call.data.startswith('event_confirm_'))
+def handle_confirmation(call):
+    chat_id = call.message.chat.id
+    if call.data == "event_confirm_yes":
+        try:
+            # Call your MCP tool
+            result = mcp_manager.call_tool_sync("add_ical_event", {
+                "event_name": event_data[chat_id]['name'],
+                "start_time": event_data[chat_id]['start_time'],
+                "duration_hours": event_data[chat_id]['duration'],
+                "description": event_data[chat_id].get('description', ''),
+                "location": event_data[chat_id].get('location', '')
+            })
+            
+            BOT.send_message(chat_id, result.content[0].text)
+        except Exception as e:
+            BOT.send_message(chat_id, f"❌ Error adding event: {str(e)}")
+    else:
+        BOT.send_message(chat_id, "Event cancelled. Start over with /addevent")
+    
+    # Clean up
+    user_states.pop(chat_id, None)
+    event_data.pop(chat_id, None)
+    BOT.delete_message(chat_id, call.message.message_id)
+
 
 
 ## GENERATING AN IMAGE NEED ANOTHER IMAGE GENERATION MODEL ##
@@ -195,11 +491,6 @@ def reply_func(message):
         if typing:
             typing.stop()
             t.join()
-
-async def cleanup():
-    """Clean up resources."""
-    global exit_stack
-    await exit_stack.aclose()
 
 if __name__ == "__main__":
     BOT.polling()
