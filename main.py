@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime
 import re
 from telebot import types
+import urllib.parse
 
 
 # Load environment viariables
@@ -101,12 +102,12 @@ conversation_history = defaultdict(list)
 
 
 def extract_datetime(event_text):
-    return event_text.split(" at ")[-1]
+    return event_text.split(" | ")[-1]
 
 def format_event(event_text):
-    title_part, datetime_part = event_text.split(" at ")
+    title_part, duration_part, description_part, location_part, datetime_part, = event_text.split(" | ", 4)
 
-    event_time = datetime.fromisoformat(datetime_part)
+    event_time = datetime.fromisoformat(datetime_part.strip())
 
     formatted_date = event_time.strftime("%d %B %Y")
     formatted_time = event_time.strftime("%H:%M")
@@ -114,7 +115,27 @@ def format_event(event_text):
 
     return f"""Event: {title_part}
   Date: {formatted_date} ({day_of_week})
-  Time: {formatted_time}"""
+  Time: {formatted_time}
+  Duration: {duration_part}
+  Description: {description_part}
+  Location: {location_part}"""
+
+def format_inline_event(event_text):
+    title_part, datetime_part = event_text.split(" | ")
+
+    event_time = datetime.fromisoformat(datetime_part)
+
+    formatted_date = event_time.strftime("%d %B %Y")
+    formated_time = event_time.strftime("%H:%M")
+    day_of_week = event_time.strftime("%A")
+
+    return f"""{title_part}, {formatted_date}, {day_of_week} @ {formated_time}"""
+
+def extract_event_name(event_text: str) -> str:
+    return event_text.split(" | ")[0] ## CHANGE TO " | "
+
+def extract_event_time(event_text: str) -> str:
+    return event_text.split(" | ")[-1] ## CHANGE TO " | "
 
 # /start #
 @BOT.message_handler(commands=['start'])
@@ -184,10 +205,16 @@ def list_calendar(message):
         future_events.sort()
 
         formatted_events = []
-        for i, (event_time, event_text) in enumerate(future_events, 1):
+
+        if not future_events:
             formatted_events.append(
-                f"SCHEDULE {i}:\n"
-                f"  {format_event(event_text)}")
+                "Your schedule is free! There are no upcoming events!"
+            )
+        else:
+            for i, (event_time, event_text) in enumerate(future_events, 1):
+                formatted_events.append(
+                    f"SCHEDULE {i}:\n"
+                    f"  {format_event(event_text)}")
 
         structured_events = "\n\n".join(formatted_events)
 
@@ -201,6 +228,72 @@ def list_calendar(message):
 user_states = {}  # Track conversation state
 event_data = {}    # Store temporary event data
 
+### DELETE EVENTS FROM CALENDAR ###
+@BOT.message_handler(commands=['deleteEvent'])
+def start_delete_event(message):
+    chat_id = message.chat.id
+
+    try:
+        result = mcp_manager.call_tool_sync("get_all_ical_events", {
+            "ical_url": ICAL_URL
+        })
+
+        current_time = datetime.now().astimezone()
+        data = [item for item in result.content]
+
+        future_events = []
+        for event in data:
+            event_time_str = extract_datetime(event.text)
+            event_time = datetime.fromisoformat(event_time_str)
+            if event_time > current_time:
+                future_events.append((event_time, event.text))
+
+        if not future_events:
+            return BOT.send_message(chat_id, "No upcoming events found to delete")
+        
+        future_events.sort()
+
+        markup = types.InlineKeyboardMarkup()
+        for _, event_text in future_events:
+            btn_text = format_inline_event(event_text)
+            event_name = extract_event_name(event_text)
+            event_time = extract_event_time(event_text)
+            callback_data = f"delete_{event_name}_{event_time}"
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+        
+        BOT.send_message(
+            chat_id,
+            "==============DELETE AN EVENT==============\n\n"
+            "🗑️ Which event do you want to remove?",
+            reply_markup=markup
+        )
+
+    except Exception as e:
+        BOT.send_message(chat_id, f"❌ Error loading events: {str(e)}")
+
+@BOT.callback_query_handler(func=lambda call: call.data.startswith('delete_'))
+def handle_delete(call):
+    chat_id = call.message.chat.id
+    try:
+        _, event_name, event_time = call.data.split('_', 2)
+
+        result = mcp_manager.call_tool_sync("delete_calendar_event", {
+            "event_name": event_name,
+            "event_time": event_time
+        })
+
+        BOT.edit_message_text(
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            text=f"{result.content[0].text.split(" @ ")[0]}\n\n"
+                f"Event: {event_name}\n"
+                f"Time: {datetime.fromisoformat(event_time).strftime('%Y-%m-%d  %H:%M')}"
+        )
+
+    except Exception as e:
+        BOT.answer_callback_query(call.id, f"Error: {str(e)}", show_alert=True)
+
+### ADDING EVENTS TO CALENDAR ###
 @BOT.message_handler(commands=['addevent'])
 def start_add_event(message):
     chat_id = message.chat.id
@@ -224,9 +317,10 @@ def handle_event_name(message):
         chat_id,
         "📅 When is this happening?\n"
         "Examples:\n"
-        "- Tomorrow 2pm\n"
+        "- Tomorrow 2pm OR 2:30pm \n"
         "- 2023-12-25 14:30\n"
-        "- Next Friday 3pm",
+        "- Next Friday 3pm OR 3:30pm\n"
+        "- Sunday 5pm OR 5.30pm",
         reply_markup=types.ForceReply(selective=True)
     )
 
