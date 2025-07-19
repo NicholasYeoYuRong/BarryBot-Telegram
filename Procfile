@@ -1,1 +1,2 @@
-worker: python mcp-server.py & python main.py
+worker: python main.py
+mcp-server: python mcp-server.py
