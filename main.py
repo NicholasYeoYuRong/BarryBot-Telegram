@@ -1,11 +1,8 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from threading import Thread
 from collections import defaultdict
-from diffusers import DiffusionPipeline, StableDiffusionPipeline, DPMSolverMultistepScheduler, FluxPipeline
+from diffusers import StableDiffusionPipeline
 import torch
-import requests
 from io import BytesIO
 import ollama
 import telebot
@@ -19,9 +16,7 @@ from tele_indicators import TypingIndicator, SendingPhotoIndicator
 import threading
 from pathlib import Path
 from datetime import datetime
-import re
 from telebot import types
-import urllib.parse
 
 
 # Load environment viariables
