@@ -31,66 +31,48 @@ MODEL = MODEL_NAME
 
 mcpmanager = None
 
-# class McpManager:
-#     def __init__(self):
-#         self.session = None
-#         self.loop = asyncio.new_event_loop()
-#         self.connected = threading.Event()
-#         self.tools: List[Any] = []
-#         self.server_thread = None
-
-#     async def _connect(self , server_params: StdioServerParameters):
-#         """Async connection handler"""
-#         try:
-#             async with stdio_client(server_params) as (read, write):
-#                 async with ClientSession(read, write) as session:
-#                     self.session = session
-#                     await session.initialize()
-
-#                     # Cache tools list
-#                     tools_result = await session.list_tools()
-#                     self.tools = tools_result.tools
-#                     print("\nConnected to server with tools:")
-#                     for tool in self.tools:
-#                         print(f" - {tool.name}: {tool.description}")
-
-#                     self.connected.set()
-
-#                     # Keep conenction alive
-#                     while True:
-#                         await asyncio.sleep(1)
-        
-#         except Exception as e:
-#             print(f"MCP connection error: {str(e)}")
-#             self.connected.clear()
-    
-#     def start_connection(self, server_params: StdioServerParameters):
-#         """Start connection in background thread"""
-#         def run():
-#             asyncio.set_event_loop(self.loop)
-#             self.loop.run_until_complete(self._connect(server_params))
-
-#         if not self.server_thread or not self.server_thread.is_alive():
-#             self.server_thread = threading.Thread(target=run, daemon=True)
-#             self.server_thread.start()
-async def create_mcp_session():
-    from mcp.client.http import HttpClient
-    return HttpClient("http://localhost:{}".format(os.getenv("PORT", 8000)))
-
 class McpManager:
     def __init__(self):
-        self.client = None
+        self.session = None
+        self.loop = asyncio.new_event_loop()
         self.connected = threading.Event()
+        self.tools: List[Any] = []
+        self.server_thread = None
 
-    async def connect(self):
+    async def _connect(self , server_params: StdioServerParameters):
+        """Async connection handler"""
         try:
-            self.client = await create_mcp_session()
-            await self.client.initialize()
-            self.connected.set()
-            print("✅ MCP HTTP connection established")
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    self.session = session
+                    await session.initialize()
+
+                    # Cache tools list
+                    tools_result = await session.list_tools()
+                    self.tools = tools_result.tools
+                    print("\nConnected to server with tools:")
+                    for tool in self.tools:
+                        print(f" - {tool.name}: {tool.description}")
+
+                    self.connected.set()
+
+                    # Keep conenction alive
+                    while True:
+                        await asyncio.sleep(1)
+        
         except Exception as e:
-            print(f"Connection failed: {e}")
+            print(f"MCP connection error: {str(e)}")
             self.connected.clear()
+    
+    def start_connection(self, server_params: StdioServerParameters):
+        """Start connection in background thread"""
+        def run():
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self._connect(server_params))
+
+        if not self.server_thread or not self.server_thread.is_alive():
+            self.server_thread = threading.Thread(target=run, daemon=True)
+            self.server_thread.start()
 
     def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
         """Synchronous wrapper for tool calls"""
