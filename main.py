@@ -1,8 +1,6 @@
 from dotenv import load_dotenv
 from threading import Thread
 from collections import defaultdict
-from diffusers import StableDiffusionPipeline
-import torch
 from io import BytesIO
 import ollama
 import telebot
@@ -17,6 +15,8 @@ import threading
 from pathlib import Path
 from datetime import datetime
 from telebot import types
+import requests
+import time
 
 
 # Load environment viariables
@@ -184,6 +184,8 @@ def addition_tool(message):
 def list_calendar(message):
     try:
 
+        print(f"ICAL_URL: {os.getenv('ICAL_URL')}") 
+        
         result = mcp_manager.call_tool_sync("get_ical_events", {
             "ical_url": ICAL_URL,
             "max_results": 6
@@ -259,6 +261,8 @@ def start_delete_event(message):
             callback_data = f"delete_{event_name}_{event_time}"
             markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
         
+        markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_delete"))
+
         BOT.send_message(
             chat_id,
             "==============DELETE AN EVENT==============\n\n"
@@ -268,6 +272,15 @@ def start_delete_event(message):
 
     except Exception as e:
         BOT.send_message(chat_id, f"❌ Error loading events: {str(e)}")
+
+@BOT.callback_query_handler(func=lambda call: call.data == "cancel_delete")
+def cancel_delete(call):
+    chat_id = call.message.chat.id
+    BOT.edit_message_text(
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        text="Deletion cancelled. You can start over with /deleteEvent"
+    )
 
 @BOT.callback_query_handler(func=lambda call: call.data.startswith('delete_'))
 def handle_delete(call):
@@ -297,12 +310,15 @@ def start_add_event(message):
     chat_id = message.chat.id
     user_states[chat_id] = 'awaiting_event_name'
     event_data[chat_id] = {'duration': 1.0}  # Set default duration
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
-    BOT.send_message(
+    askmsg = BOT.send_message(
         chat_id,
         "Let's add an event!\n\n"
         "Please send me the event name:",
-        reply_markup=types.ForceReply(selective=True)
+        reply_markup=markup
     )
 
 @BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_event_name')
@@ -310,8 +326,11 @@ def handle_event_name(message):
     chat_id = message.chat.id
     event_data[chat_id]['name'] = message.text
     user_states[chat_id] = 'awaiting_datetime'
-    
-    BOT.send_message(
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
+
+    askmsg = BOT.send_message(
         chat_id,
         "📅 When is this happening?\n"
         "Examples:\n"
@@ -319,7 +338,7 @@ def handle_event_name(message):
         "- 2023-12-25 14:30\n"
         "- Next Friday 3pm OR 3:30pm\n"
         "- Sunday 5pm OR 5.30pm",
-        reply_markup=types.ForceReply(selective=True)
+        reply_markup=markup
     )
 
 @BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_datetime')
@@ -331,6 +350,7 @@ def handle_datetime(message):
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip (use 1 hour)", callback_data="skip_duration"))
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
     BOT.send_message(
         chat_id,
@@ -346,6 +366,7 @@ def skip_duration(call):
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip description", callback_data="skip_description"))
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
     BOT.edit_message_text(
         chat_id=chat_id,
@@ -373,6 +394,7 @@ def handle_duration(message):
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip description", callback_data="skip_description"))
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
     BOT.send_message(
         chat_id,
@@ -389,6 +411,7 @@ def skip_description(call):
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip location", callback_data="skip_location"))
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
     BOT.edit_message_text(
         chat_id=chat_id,
@@ -411,6 +434,7 @@ def handle_description(message):
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip location", callback_data="skip_location"))
+    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
     BOT.send_message(
         chat_id,
@@ -485,6 +509,18 @@ def handle_confirmation(call):
     event_data.pop(chat_id, None)
     BOT.delete_message(chat_id, call.message.message_id)
 
+@BOT.callback_query_handler(func=lambda call: call.data == "cancel_add_event")
+def cancel_add_event(call):
+    chat_id = call.message.chat.id
+    user_states.pop(chat_id, None)
+    event_data.pop(chat_id, None)
+    
+    BOT.edit_message_text(
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        text="Event creation cancelled. You can start over with /addevent"
+    )
+
 
 
 ## GENERATING AN IMAGE NEED ANOTHER IMAGE GENERATION MODEL ##
@@ -504,29 +540,49 @@ def generate_image(message):
 
         wait_msg = BOT.reply_to(message, "🖌️ Generating your image... (30-60 seconds)")
 
-        DIFFUSER_MODEL = "sd-legacy/stable-diffusion-v1-5" ## TEMPORARY MODEL FOR NOW, TO USE black-forest-labs/FLUX.1-dev IN FUTURE ##
+        # DIFFUSER_MODEL = "sd-legacy/stable-diffusion-v1-5" ## TEMPORARY MODEL FOR NOW, TO USE black-forest-labs/FLUX.1-dev IN FUTURE ##
 
-        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-        torch.backends.cuda.enable_flash_sdp(True) 
+        # os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+        # torch.backends.cuda.enable_flash_sdp(True) 
 
-        # Load pipeline with optimizations
-        pipe = StableDiffusionPipeline.from_pretrained(DIFFUSER_MODEL, torch_dtype=torch.float16, variant="fp16", safety_checker=None)
-        pipe = pipe.to("cuda")
-        torch.cuda.empty_cache()
+        # # Load pipeline with optimizations
+        # pipe = StableDiffusionPipeline.from_pretrained(DIFFUSER_MODEL, torch_dtype=torch.float16, variant="fp16", safety_checker=None)
+        # pipe = pipe.to("cuda")
+        # torch.cuda.empty_cache()
         
-        image = pipe(
-            prompt=prompt,
-            height=512,  
-            width=512,
-        ).images[0]
+        # image = pipe(
+        #     prompt=prompt,
+        #     height=512,  
+        #     width=512,
+        # ).images[0]
+
+        # Call Stability AI API
+        response = requests.post(
+            "https://api.stability.ai/v2beta/stable-image/generate/core",
+            headers={
+                "Authorization": f"Bearer {os.getenv('STABILITY_API_KEY')}",
+                "Accept": "image/*"
+            },
+            files={"none": ''},
+            data={
+                "prompt": prompt,
+                "output_format": "png"
+            },
+            timeout=30  # 30-second timeout
+        )
+
+        # Convert to Bytes
+        img_bytes = BytesIO(response.content)
 
         # Convert to bytes and send
-        img_bytes = BytesIO()
-        image.save(img_bytes, format='PNG')
-        img_bytes.seek(0)
+        # img_bytes = BytesIO()
+        # response.save(img_bytes, format='PNG')
+        # img_bytes.seek(0)
         
+        # Send the image
         BOT.delete_message(chat_id=message.chat.id, message_id=wait_msg.message_id)
         BOT.send_photo(message.chat.id, img_bytes)
+        # BOT.send_photo(message.chat.id, img_bytes)
         sending.stop()
         s.join()
     
@@ -584,5 +640,22 @@ def reply_func(message):
             typing.stop()
             t.join()
 
+
+
+def run_bot():
+    while True:
+        try:
+            print("Starting bot...")
+            BOT.polling(non_stop=True, skip_pending=True)
+        except Exception as e:
+            print(f"Bot crashed: {str(e)}")
+            time.sleep(10)  # Wait before restarting
+
 if __name__ == "__main__":
-    BOT.polling()
+    # Start in a separate thread for better control
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Keep main thread alive
+    while True:
+        time.sleep(1)
