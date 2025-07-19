@@ -264,9 +264,4 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    try:
-        mcp.run(transport="stdio", host="0.0.0.0", port=8000)
-    except Exception as e:
-        print(f"MCP server crashed: {e}")
-        time.sleep(5)  # Prevent rapid restart flooding
-        raise
+    mcp.run(transport="stdio")
