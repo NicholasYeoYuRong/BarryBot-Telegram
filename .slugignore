@@ -1,0 +1,6 @@
+*.bin
+*.h5
+*.pt
+*.safetensors
+__pycache__/
+.venv/
