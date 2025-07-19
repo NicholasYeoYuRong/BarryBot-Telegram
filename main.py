@@ -183,8 +183,6 @@ def addition_tool(message):
 @BOT.message_handler(commands=['myevents'])
 def list_calendar(message):
     try:
-
-        print(f"ICAL_URL: {os.getenv('ICAL_URL')}") 
         
         result = mcp_manager.call_tool_sync("get_ical_events", {
             "ical_url": ICAL_URL,

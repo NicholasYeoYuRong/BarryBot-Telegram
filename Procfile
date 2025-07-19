@@ -1,1 +1,1 @@
-worker: python main.py
+worker: while true; do python mcp-server.py & python main.py; sleep 10; done
