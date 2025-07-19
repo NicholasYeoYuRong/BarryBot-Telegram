@@ -265,3 +265,4 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
+    print("MCP server is running on file...")
