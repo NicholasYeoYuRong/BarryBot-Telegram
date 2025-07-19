@@ -88,8 +88,8 @@ class McpManager:
 mcp_manager = McpManager()
 
 server_params = StdioServerParameters(
-    command="uv",
-    args=["run", "python", "mcp-server.py"],
+    command="python",
+    args=["mcp-server.py"],
     cwd=str(Path.cwd())
 )
 
