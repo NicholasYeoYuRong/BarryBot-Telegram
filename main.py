@@ -1,4 +1,3 @@
-from config import API_TOKEN, MODEL_NAME, ICAL_URL
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -27,6 +26,10 @@ import urllib.parse
 
 # Load environment viariables
 load_dotenv()
+
+API_TOKEN = os.environ["TELEGRAM_TOKEN"]
+MODEL_NAME = os.environ["MODEL_NAME"]
+ICAL_URL = os.environ["ICAL_URL"]
 
 BOT = telebot.TeleBot(token=API_TOKEN)
 MODEL = MODEL_NAME

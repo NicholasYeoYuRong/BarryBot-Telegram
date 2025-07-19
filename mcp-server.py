@@ -1,4 +1,3 @@
-from config import ICAL_URL, ICLOUD_USERNAME, ICLOUD_PASSWORD, CALDAV_URL, CALENDAR_NAME
 from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -10,12 +9,23 @@ from dateutil import parser
 import pytz
 from zoneinfo import ZoneInfo
 import tzlocal
+import os
+from dotenv import load_dotenv
 
 mcp = FastMCP(
     name="MCP-server",
     host="0.0.0.0",
     port="8000",
     )
+
+load_dotenv()
+
+ICAL_URL = os.environ["ICAL_URL"]
+ICLOUD_USERNAME = os.environ["ICLOUD_USERNAME"]
+ICLOUD_PASSWORD = os.environ["ICLOUD_PASSWORD"]
+CALDAV_URL = os.environ["CALDAV_URL"]
+CALENDAR_NAME = os.environ["CALENDAR_NAME"]
+
     
 LOCAL_TIMEZONE = pytz.timezone('Asia/Singapore')
 
