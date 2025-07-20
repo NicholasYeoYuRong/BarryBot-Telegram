@@ -264,4 +264,4 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    mcp.run(transport="http")
+    mcp.run(transport="websocket") 

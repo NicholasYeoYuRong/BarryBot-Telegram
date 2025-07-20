@@ -17,8 +17,8 @@ from datetime import datetime
 from telebot import types
 import requests
 import time
-from mcp.client.http import HttpClient
-from mcp.client.http import HTTPConnectionParameters
+from mcp.client.websocket import WebSocketClient
+from mcp.client.websocket import WebSocketConnectionParameters
 
 
 # Load environment viariables
@@ -42,12 +42,11 @@ class McpManager:
     async def _connect(self):
         """Async connection handler"""
         try:
-            # Use HTTP connection parameters
-            conn_params = HTTPConnectionParameters(
-                host=os.getenv("MCP_SERVER_URL", "http://localhost:8000")
+            conn_params = WebSocketConnectionParameters(
+                host=os.getenv("MCP_SERVER_URL", "ws://localhost:8000")
             )
             
-            self.client = HttpClient(conn_params)
+            self.client = WebSocketClient(conn_params)
             await self.client.connect()
             
             # Cache tools list
