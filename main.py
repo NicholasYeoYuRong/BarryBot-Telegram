@@ -20,7 +20,7 @@ import time
 import subprocess
 import signal
 import logging
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, wait_fixed
 
 # Configure logging
 logging.basicConfig(
@@ -51,32 +51,26 @@ class McpManager:
         self.server_thread = None
         self.connection_lock = threading.Lock()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def _connect(self , server_params: StdioServerParameters):
-        """Async connection handler"""
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+    async def _connect(self, server_params):
         try:
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    self.session = session
-                    await session.initialize()
-
-                    tools_result = await session.list_tools()
-                    self.tools = tools_result.tools
-                    logger.info("Connected to MCP server with %d tools", len(self.tools))
+            async with AsyncExitStack() as stack:
+                # Acquire connections
+                client = await stack.enter_async_context(stdio_client(server_params))
+                session = await stack.enter_async_context(ClientSession(*client))
+                
+                await session.initialize()
+                self.session = session
+                self.connected.set()
+                logger.info("MCP connection established")
+                
+                while True:
+                    await asyncio.sleep(1)
                     
-                    self.connected.set()
-                    logger.info("MCP connection established")
-
-                    # Keep conenction alive
-                    while True:
-                        await asyncio.sleep(1)
-        
         except Exception as e:
-            print(f"MCP connection error: {str(e)}")
             self.connected.clear()
-            if self.server_process:
-                self.server_process.terminate()
-                self.server_process = None
+            logger.error(f"MCP connection failed: {str(e)}")
+            raise
 
     def start_server(self):
         """Start the MCP server process with error handling"""
@@ -156,26 +150,28 @@ mcp_manager.start_connection()
 # Initialize MCP connection
 def initialize_services():
     logger.info("Initializing services...")
-    
-    # Start MCP server
     mcp_manager.start_server()
-    
-    # Start connection in background
-    server_params = StdioServerParameters(
-        command="python",
-        args=["mcp-server.py"],
-        cwd=str(Path.cwd())
-    )
-    
+
     def run_connection():
-        asyncio.set_event_loop(mcp_manager.loop)
-        mcp_manager.loop.run_until_complete(mcp_manager._connect(server_params))
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        server_params = StdioServerParameters(
+            command="python",
+            args=["mcp-server.py"],
+            cwd=str(Path.cwd())
+        )
+        
+        try:
+            loop.run_until_complete(mcp_manager._connect(server_params))
+        except Exception as e:
+            logger.error(f"Connection failed: {str(e)}")
+        finally:
+            loop.close()
 
     mcp_manager.server_thread = threading.Thread(target=run_connection, daemon=True)
     mcp_manager.server_thread.start()
-    
-    # Wait briefly for connection
-    time.sleep(2)
 
 initialize_services()
 
