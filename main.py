@@ -80,8 +80,14 @@ class McpManager:
             )
             print("Started MCP server process")
     
-    def start_connection(self, server_params: StdioServerParameters):
+    def start_connection(self):
         """Start connection in background thread"""
+        server_params = StdioServerParameters(
+            command="python",
+            args=["mcp-server.py"],
+            cwd=str(Path.cwd())
+        )
+
         def run():
             asyncio.set_event_loop(self.loop)
             self.loop.run_until_complete(self._connect(server_params))
@@ -112,14 +118,6 @@ class McpManager:
     
 mcp_manager = McpManager()
 mcp_manager.start_connection()
-
-server_params = StdioServerParameters(
-    command="python",
-    args=["mcp-server.py"],
-    cwd=str(Path.cwd())
-)
-
-mcp_manager.start_connection(server_params)
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
