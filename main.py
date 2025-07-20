@@ -19,7 +19,15 @@ import requests
 import time
 import subprocess
 import signal
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load environment viariables
 load_dotenv()
@@ -41,7 +49,9 @@ class McpManager:
         self.tools: List[Any] = []
         self.server_process = None # Added server process
         self.server_thread = None
+        self.connection_lock = threading.Lock()
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def _connect(self , server_params: StdioServerParameters):
         """Async connection handler"""
         try:
@@ -50,14 +60,12 @@ class McpManager:
                     self.session = session
                     await session.initialize()
 
-                    # Cache tools list
                     tools_result = await session.list_tools()
                     self.tools = tools_result.tools
-                    print("\nConnected to server with tools:")
-                    for tool in self.tools:
-                        print(f" - {tool.name}: {tool.description}")
-
+                    logger.info("Connected to MCP server with %d tools", len(self.tools))
+                    
                     self.connected.set()
+                    logger.info("MCP connection established")
 
                     # Keep conenction alive
                     while True:
@@ -71,15 +79,33 @@ class McpManager:
                 self.server_process = None
 
     def start_server(self):
-        """Start the MCP server process"""
-        if self.server_process is None or self.server_process.poll() is not None:
-            self.server_process = subprocess.Popen(
-                ["python", "mcp-server.py"],
-                stdout=subprocess.PIPE,
-                stdin=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            print("Started MCP server process")
+        """Start the MCP server process with error handling"""
+        try:
+            if self.server_process is None or self.server_process.poll() is not None:
+                logger.info("Starting MCP server process")
+                self.server_process = subprocess.Popen(
+                    ["python", "mcp-server.py"],
+                    stdout=subprocess.PIPE,
+                    stdin=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    bufsize=0  # Unbuffered
+                )
+                # Wait briefly for server to initialize
+                time.sleep(2)
+        except Exception as e:
+            logger.error("Failed to start MCP server: %s", str(e))
+            self.server_process = None
+    
+    def ensure_connection(self):
+        """Ensure we have an active connection"""
+        if not self.connected.is_set():
+            with self.connection_lock:
+                if not self.connected.is_set():
+                    logger.info("Attempting to establish MCP connection")
+                    self.start_server()
+                    self.start_connection()
+                    return self.connected.wait(timeout=10)
+        return True
     
     def start_connection(self):
         """Start connection in background thread"""
@@ -99,15 +125,22 @@ class McpManager:
             self.server_thread.start()
 
     def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
-        """Synchronous wrapper for tool calls"""
-        if not self.connected.is_set():
-            raise ConnectionError("Not connected to MCP server")
+        """Synchronous wrapper for tool calls with connection recovery"""
+        try:
+            if not self.ensure_connection():
+                raise ConnectionError("Failed to establish MCP connection")
 
-        future = asyncio.run_coroutine_threadsafe(
-            self.session.call_tool(tool_name, arguments=arguments),
-            self.loop
-        )    
-        return future.result()
+            future = asyncio.run_coroutine_threadsafe(
+                self.session.call_tool(tool_name, arguments=arguments),
+                self.loop
+            )
+            return future.result()
+        except ConnectionError as e:
+            logger.error("MCP connection error: %s", str(e))
+            raise
+        except Exception as e:
+            logger.error("Tool call failed: %s", str(e))
+            raise
     
     def shutdown(self):
         """Cleanup resources"""
@@ -119,6 +152,32 @@ class McpManager:
     
 mcp_manager = McpManager()
 mcp_manager.start_connection()
+
+# Initialize MCP connection
+def initialize_services():
+    logger.info("Initializing services...")
+    
+    # Start MCP server
+    mcp_manager.start_server()
+    
+    # Start connection in background
+    server_params = StdioServerParameters(
+        command="python",
+        args=["mcp-server.py"],
+        cwd=str(Path.cwd())
+    )
+    
+    def run_connection():
+        asyncio.set_event_loop(mcp_manager.loop)
+        mcp_manager.loop.run_until_complete(mcp_manager._connect(server_params))
+
+    mcp_manager.server_thread = threading.Thread(target=run_connection, daemon=True)
+    mcp_manager.server_thread.start()
+    
+    # Wait briefly for connection
+    time.sleep(2)
+
+initialize_services()
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
