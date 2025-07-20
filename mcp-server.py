@@ -267,16 +267,5 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    import asyncio
-    from threading import Thread
-    
-    # Start MCP server in main thread
-    def run_mcp():
-        mcp.run(transport="websocket")
-    
-    mcp_thread = Thread(target=run_mcp, daemon=True)
-    mcp_thread.start()
-    
-    # Start bot in main thread
-    from main import run_bot
-    run_bot()
+    # Use stdio transport for Heroku compatibility
+    mcp.run(transport="stdio")

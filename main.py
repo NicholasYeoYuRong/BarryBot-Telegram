@@ -40,41 +40,12 @@ mcpmanager = None
 
 class McpManager:
     def __init__(self):
-        self.client = None
-        self.tools: List[Any] = []
-        self.connected = False
+        from local_mcp import LocalMCP
+        self.mcp = LocalMCP()
+        self.tools = self.mcp.tools
 
-    async def _connect(self):
-        """Async connection handler"""
-        try:
-            # Try WebSocket first, fallback to stdio
-            try:
-                conn_params = WebSocketConnectionParameters(
-                    host="ws://localhost:8000"
-                )
-                self.client = WebSocketClient(conn_params)
-            except NameError:
-                conn_params = StdioConnectionParameters(
-                    command="python",
-                    args=["mcp-server.py"]
-                )
-                self.client = StdioClient(conn_params)
-            
-            await self.client.connect()
-
-        except Exception as e:
-            print(f"MCP connection error: {str(e)}")
-            self.connected = False
-    
-mcp_manager = McpManager()
-
-server_params = StdioServerParameters(
-    command="python",
-    args=["mcp-server.py"],
-    cwd=str(Path.cwd())
-)
-
-mcp_manager.start_connection(server_params)
+    def call_tool_sync(self, tool_name: str, arguments: dict):
+        return asyncio.run(self.mcp.call_tool(tool_name, arguments))
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
