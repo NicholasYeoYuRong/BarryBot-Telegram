@@ -7,14 +7,11 @@ import re
 import pytz
 import os
 from dotenv import load_dotenv
-import os
-
-os.environ["MCP_WEBSOCKET"] = "1"
 
 mcp = FastMCP(
     name="MCP-server",
     host="0.0.0.0",
-    port=os.getenv("PORT", "8000"),
+    port="8000",
     )
 
 load_dotenv()
@@ -267,5 +264,5 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    # Use stdio transport for Heroku compatibility
     mcp.run(transport="stdio")
+    print("MCP server is running on file...")

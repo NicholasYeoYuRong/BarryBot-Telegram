@@ -14,5 +14,3 @@ pydantic-settings==2.10.1
 mcp==1.9.4
 vobject==0.9.9
 ics==0.7.2
-tenacity==9.1.2
-websockets==11.0.3

@@ -17,13 +17,6 @@ from datetime import datetime
 from telebot import types
 import requests
 import time
-try:
-    from mcp.client.websocket import WebSocketClient
-    from mcp.client.websocket import WebSocketConnectionParameters
-except ImportError:
-    # Fallback to stdio if WebSocket not available
-    from mcp.client.stdio import StdioClient
-    from mcp.client.stdio import StdioConnectionParameters
 
 
 # Load environment viariables
@@ -40,12 +33,67 @@ mcpmanager = None
 
 class McpManager:
     def __init__(self):
-        from local_mcp import LocalMCP
-        self.mcp = LocalMCP()
-        self.tools = self.mcp.tools
+        self.session = None
+        self.loop = asyncio.new_event_loop()
+        self.connected = threading.Event()
+        self.tools: List[Any] = []
+        self.server_thread = None
 
-    def call_tool_sync(self, tool_name: str, arguments: dict):
-        return asyncio.run(self.mcp.call_tool(tool_name, arguments))
+    async def _connect(self , server_params: StdioServerParameters):
+        """Async connection handler"""
+        try:
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    self.session = session
+                    await session.initialize()
+
+                    # Cache tools list
+                    tools_result = await session.list_tools()
+                    self.tools = tools_result.tools
+                    print("\nConnected to server with tools:")
+                    for tool in self.tools:
+                        print(f" - {tool.name}: {tool.description}")
+
+                    self.connected.set()
+
+                    # Keep conenction alive
+                    while True:
+                        await asyncio.sleep(1)
+        
+        except Exception as e:
+            print(f"MCP connection error: {str(e)}")
+            self.connected.clear()
+    
+    def start_connection(self, server_params: StdioServerParameters):
+        """Start connection in background thread"""
+        def run():
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self._connect(server_params))
+
+        if not self.server_thread or not self.server_thread.is_alive():
+            self.server_thread = threading.Thread(target=run, daemon=True)
+            self.server_thread.start()
+
+    def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
+        """Synchronous wrapper for tool calls"""
+        if not self.connected.is_set():
+            raise ConnectionError("Not connected to MCP server")
+
+        future = asyncio.run_coroutine_threadsafe(
+            self.session.call_tool(tool_name, arguments=arguments),
+            self.loop
+        )    
+        return future.result()
+    
+mcp_manager = McpManager()
+
+server_params = StdioServerParameters(
+    command="python",
+    args=["mcp-server.py"],
+    cwd=str(Path.cwd())
+)
+
+mcp_manager.start_connection(server_params)
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
