@@ -42,6 +42,7 @@ class McpManager:
     async def _connect(self):
         """Async connection handler"""
         try:
+            # Connect to local WebSocket server
             conn_params = WebSocketConnectionParameters(
                 host=os.getenv("MCP_SERVER_URL", "ws://localhost:8000")
             )
@@ -61,18 +62,6 @@ class McpManager:
         except Exception as e:
             print(f"MCP connection error: {str(e)}")
             self.connected = False
-
-    def start_connection(self):
-        """Start connection in background"""
-        if not self.connected:
-            asyncio.run(self._connect())
-
-    def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
-        """Synchronous wrapper for tool calls"""
-        if not self.connected:
-            raise ConnectionError("Not connected to MCP server")
-
-        return asyncio.run(self.client.call_tool(tool_name, arguments=arguments))
     
 mcp_manager = McpManager()
 
