@@ -7,16 +7,6 @@ import re
 import pytz
 import os
 from dotenv import load_dotenv
-import signal
-import sys
-
-def signal_handler(sig, frame):
-    print("MCP server shutting down...")
-    sys.exit(0)
-
-# Register signal handler
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
 
 mcp = FastMCP(
     name="MCP-server",
@@ -274,5 +264,5 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    print("Starting MCP server in stdio mode...")
     mcp.run(transport="stdio")
+    print("MCP server is running on file...")
