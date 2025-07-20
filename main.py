@@ -39,6 +39,7 @@ class McpManager:
         self.loop = asyncio.new_event_loop()
         self.connected = threading.Event()
         self.tools: List[Any] = []
+        self.server_process = None # Added server process
         self.server_thread = None
 
     async def _connect(self , server_params: StdioServerParameters):
