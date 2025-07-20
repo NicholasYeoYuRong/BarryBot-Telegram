@@ -17,8 +17,13 @@ from datetime import datetime
 from telebot import types
 import requests
 import time
-from mcp.client.websocket import WebSocketClient
-from mcp.client.websocket import WebSocketConnectionParameters
+try:
+    from mcp.client.websocket import WebSocketClient
+    from mcp.client.websocket import WebSocketConnectionParameters
+except ImportError:
+    # Fallback to stdio if WebSocket not available
+    from mcp.client.stdio import StdioClient
+    from mcp.client.stdio import StdioConnectionParameters
 
 
 # Load environment viariables
@@ -42,22 +47,20 @@ class McpManager:
     async def _connect(self):
         """Async connection handler"""
         try:
-            # Connect to local WebSocket server
-            conn_params = WebSocketConnectionParameters(
-                host=os.getenv("MCP_SERVER_URL", "ws://localhost:8000")
-            )
+            # Try WebSocket first, fallback to stdio
+            try:
+                conn_params = WebSocketConnectionParameters(
+                    host="ws://localhost:8000"
+                )
+                self.client = WebSocketClient(conn_params)
+            except NameError:
+                conn_params = StdioConnectionParameters(
+                    command="python",
+                    args=["mcp-server.py"]
+                )
+                self.client = StdioClient(conn_params)
             
-            self.client = WebSocketClient(conn_params)
             await self.client.connect()
-            
-            # Cache tools list
-            tools_result = await self.client.list_tools()
-            self.tools = tools_result.tools
-            print("\nConnected to server with tools:")
-            for tool in self.tools:
-                print(f" - {tool.name}: {tool.description}")
-
-            self.connected = True
 
         except Exception as e:
             print(f"MCP connection error: {str(e)}")

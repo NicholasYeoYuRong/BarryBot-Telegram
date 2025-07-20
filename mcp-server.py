@@ -267,12 +267,16 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    import threading
-    from main import run_bot
+    import asyncio
+    from threading import Thread
     
     # Start MCP server in main thread
-    mcp.run(transport="websocket")
+    def run_mcp():
+        mcp.run(transport="websocket")
     
-    # Start bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
+    mcp_thread = Thread(target=run_mcp, daemon=True)
+    mcp_thread.start()
+    
+    # Start bot in main thread
+    from main import run_bot
+    run_bot()
