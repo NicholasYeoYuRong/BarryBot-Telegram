@@ -17,6 +17,8 @@ from datetime import datetime
 from telebot import types
 import requests
 import time
+import subprocess
+import signal
 
 
 # Load environment viariables
@@ -63,6 +65,20 @@ class McpManager:
         except Exception as e:
             print(f"MCP connection error: {str(e)}")
             self.connected.clear()
+            if self.server_process:
+                self.server_process.terminate()
+                self.server_process = None
+
+    def start_server(self):
+        """Start the MCP server process"""
+        if self.server_process is None or self.server_process.poll() is not None:
+            self.server_process = subprocess.Popen(
+                ["python", "mcp-server.py"],
+                stdout=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            print("Started MCP server process")
     
     def start_connection(self, server_params: StdioServerParameters):
         """Start connection in background thread"""
@@ -71,6 +87,7 @@ class McpManager:
             self.loop.run_until_complete(self._connect(server_params))
 
         if not self.server_thread or not self.server_thread.is_alive():
+            self.start_server() # Start the server if not already running
             self.server_thread = threading.Thread(target=run, daemon=True)
             self.server_thread.start()
 
@@ -85,7 +102,16 @@ class McpManager:
         )    
         return future.result()
     
+    def shutdown(self):
+        """Cleanup resources"""
+        if self.server_process:
+            self.server_process.terminate()
+            self.server_process.wait()
+        if self.loop:
+            self.loop.stop()
+    
 mcp_manager = McpManager()
+mcp_manager.start_connection()
 
 server_params = StdioServerParameters(
     command="python",
@@ -649,11 +675,15 @@ def run_bot():
             print(f"Bot crashed: {str(e)}")
             time.sleep(10)  # Wait before restarting
 
+def signal_handler(sig, frame):
+    print("Shutting down gracefully...")
+    mcp_manager.shutdown()
+    os._exit(0)
+
 if __name__ == "__main__":
-    # Start in a separate thread for better control
-    bot_thread = Thread(target=run_bot, daemon=True)
-    bot_thread.start()
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     
-    # Keep main thread alive
-    while True:
-        time.sleep(1)
+    # Start bot in main thread
+    run_bot()
