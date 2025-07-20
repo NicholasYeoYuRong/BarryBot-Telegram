@@ -303,6 +303,7 @@ dependencies = [
     { name = "pytz" },
     { name = "recurring-ical-events" },
     { name = "requests" },
+    { name = "tenacity" },
     { name = "tzlocal" },
     { name = "vobject" },
 ]
@@ -323,6 +324,7 @@ requires-dist = [
     { name = "pytz", specifier = "==2025.2" },
     { name = "recurring-ical-events", specifier = "==3.8.0" },
     { name = "requests", specifier = "==2.32.3" },
+    { name = "tenacity", specifier = "==9.1.2" },
     { name = "tzlocal", specifier = "==5.3.1" },
     { name = "vobject", specifier = "==0.9.9" },
 ]
@@ -544,6 +546,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e4/f8/20ede366a64e682ce734573e4ed81e16ff7d6dd23eb809c64b7a9659c124/tatsu-5.13.1.tar.gz", hash = "sha256:df8c216eecd09af9b5b308624f1bfda1e4b5af3d3df1bdc4f331a1e8ea6bc012", size = 131775, upload-time = "2025-01-10T22:22:35.65Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/68/12d01401a484cc8466b48c9cc4f56b1b3207b683af3b9d740481f1b2bf9b/TatSu-5.13.1-py3-none-any.whl", hash = "sha256:941e12df8798f444957600346c52a5ff3455f485de5b4570a3a71a00ed896a14", size = 80195, upload-time = "2025-01-10T22:22:32.552Z" },
+]
+
+[[package]]
+name = "tenacity"
+version = "9.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/d4/2b0cd0fe285e14b36db076e78c93766ff1d529d70408bd1d2a5a84f1d929/tenacity-9.1.2.tar.gz", hash = "sha256:1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb", size = 48036, upload-time = "2025-04-02T08:25:09.966Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl", hash = "sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138", size = 28248, upload-time = "2025-04-02T08:25:07.678Z" },
 ]
 
 [[package]]
