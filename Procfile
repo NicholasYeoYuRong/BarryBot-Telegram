@@ -1,2 +1,2 @@
+web: python mcp-server.py
 worker: python main.py
-mcp: python mcp-server.py

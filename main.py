@@ -1,5 +1,3 @@
-
-# === IMPORTS ===
 from dotenv import load_dotenv
 from threading import Thread
 from collections import defaultdict
@@ -7,8 +5,8 @@ from io import BytesIO
 import ollama
 import telebot
 import os
-from mcp import ClientSession, TcpServerParameters
-from mcp.client.tcp import tcp_client
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from contextlib import AsyncExitStack
 import asyncio
 from typing import Any, Dict, List
@@ -19,90 +17,90 @@ from datetime import datetime
 from telebot import types
 import requests
 import time
+from mcp.client.http import HttpClient
+from mcp.client.http import HTTPConnectionParameters
 
-# === GLOBALS & ENV ===
+
+# Load environment viariables
 load_dotenv()
+
 API_TOKEN = os.environ["TELEGRAM_TOKEN"]
 MODEL_NAME = os.environ["MODEL_NAME"]
 ICAL_URL = os.environ["ICAL_URL"]
+
 BOT = telebot.TeleBot(token=API_TOKEN)
 MODEL = MODEL_NAME
 
-# === CONVERSATION HISTORY ===
-conversation_history = defaultdict(list)
-
-# === UTILITY FUNCTIONS ===
-def extract_datetime(event_text):
-    return event_text.split(" | ")[-1]
-
+mcpmanager = None
 
 class McpManager:
     def __init__(self):
-        self.session = None
-        self.loop = asyncio.new_event_loop()
-        self.connected = threading.Event()
+        self.client = None
         self.tools: List[Any] = []
-        self.server_thread = None
+        self.connected = False
 
-    async def _connect(self, server_params: TcpServerParameters):
+    async def _connect(self):
+        """Async connection handler"""
         try:
-            async with tcp_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    self.session = session
-                    await session.initialize()
+            # Use HTTP connection parameters
+            conn_params = HTTPConnectionParameters(
+                host=os.getenv("MCP_SERVER_URL", "http://localhost:8000")
+            )
+            
+            self.client = HttpClient(conn_params)
+            await self.client.connect()
+            
+            # Cache tools list
+            tools_result = await self.client.list_tools()
+            self.tools = tools_result.tools
+            print("\nConnected to server with tools:")
+            for tool in self.tools:
+                print(f" - {tool.name}: {tool.description}")
 
-                    # Cache tools list
-                    tools_result = await session.list_tools()
-                    self.tools = tools_result.tools
-                    print("\nConnected to server with tools:")
-                    for tool in self.tools:
-                        print(f" - {tool.name}: {tool.description}")
+            self.connected = True
 
-                    self.connected.set()
-
-                    # Keep connection alive
-                    while True:
-                        await asyncio.sleep(1)
         except Exception as e:
             print(f"MCP connection error: {str(e)}")
-            self.connected.clear()
+            self.connected = False
 
-    def start_connection(self, server_params: TcpServerParameters):
-        def run():
-            asyncio.set_event_loop(self.loop)
-            self.loop.run_until_complete(self._connect(server_params))
-
-        if not self.server_thread or not self.server_thread.is_alive():
-            self.server_thread = threading.Thread(target=run, daemon=True)
-            self.server_thread.start()
+    def start_connection(self):
+        """Start connection in background"""
+        if not self.connected:
+            asyncio.run(self._connect())
 
     def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
-        if not self.connected.is_set():
+        """Synchronous wrapper for tool calls"""
+        if not self.connected:
             raise ConnectionError("Not connected to MCP server")
 
-        future = asyncio.run_coroutine_threadsafe(
-            self.session.call_tool(tool_name, arguments=arguments),
-            self.loop
-        )
-        return future.result()
-
-
-
-
-# Initialize MCP manager and connect over TCP (host and port must match mcp-server.py)
+        return asyncio.run(self.client.call_tool(tool_name, arguments=arguments))
+    
 mcp_manager = McpManager()
-server_params = TcpServerParameters(host="localhost", port=8000)
+
+server_params = StdioServerParameters(
+    command="python",
+    args=["mcp-server.py"],
+    cwd=str(Path.cwd())
+)
+
 mcp_manager.start_connection(server_params)
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
 
+
+def extract_datetime(event_text):
+    return event_text.split(" | ")[-1]
+
 def format_event(event_text):
-    title_part, duration_part, description_part, location_part, datetime_part = event_text.split(" | ", 4)
+    title_part, duration_part, description_part, location_part, datetime_part, = event_text.split(" | ", 4)
+
     event_time = datetime.fromisoformat(datetime_part.strip())
+
     formatted_date = event_time.strftime("%d %B %Y")
     formatted_time = event_time.strftime("%H:%M")
     day_of_week = event_time.strftime("%A")
+
     return f"""Event: {title_part}
   Date: {formatted_date} ({day_of_week})
   Time: {formatted_time}

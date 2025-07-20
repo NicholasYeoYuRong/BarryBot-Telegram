@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 mcp = FastMCP(
     name="MCP-server",
     host="0.0.0.0",
-    port="8000",
+    port=os.getenv("PORT", "8000"),
     )
 
 load_dotenv()
@@ -264,4 +264,4 @@ def delete_calendar_event(event_name: str, event_time: str) -> str:
         return f"❌ Failed to delete event: {str(e)}"
 
 if __name__ == "__main__":
-    mcp.run(transport="tcp")
+    mcp.run(transport="http")
