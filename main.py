@@ -1,3 +1,5 @@
+
+# === IMPORTS ===
 from dotenv import load_dotenv
 from threading import Thread
 from collections import defaultdict
@@ -5,8 +7,8 @@ from io import BytesIO
 import ollama
 import telebot
 import os
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession, TcpServerParameters
+from mcp.client.tcp import tcp_client
 from contextlib import AsyncExitStack
 import asyncio
 from typing import Any, Dict, List
@@ -18,18 +20,21 @@ from telebot import types
 import requests
 import time
 
-
-# Load environment viariables
+# === GLOBALS & ENV ===
 load_dotenv()
-
 API_TOKEN = os.environ["TELEGRAM_TOKEN"]
 MODEL_NAME = os.environ["MODEL_NAME"]
 ICAL_URL = os.environ["ICAL_URL"]
-
 BOT = telebot.TeleBot(token=API_TOKEN)
 MODEL = MODEL_NAME
 
-mcpmanager = None
+# === CONVERSATION HISTORY ===
+conversation_history = defaultdict(list)
+
+# === UTILITY FUNCTIONS ===
+def extract_datetime(event_text):
+    return event_text.split(" | ")[-1]
+
 
 class McpManager:
     def __init__(self):
@@ -39,10 +44,9 @@ class McpManager:
         self.tools: List[Any] = []
         self.server_thread = None
 
-    async def _connect(self , server_params: StdioServerParameters):
-        """Async connection handler"""
+    async def _connect(self, server_params: TcpServerParameters):
         try:
-            async with stdio_client(server_params) as (read, write):
+            async with tcp_client(server_params) as (read, write):
                 async with ClientSession(read, write) as session:
                     self.session = session
                     await session.initialize()
@@ -56,16 +60,14 @@ class McpManager:
 
                     self.connected.set()
 
-                    # Keep conenction alive
+                    # Keep connection alive
                     while True:
                         await asyncio.sleep(1)
-        
         except Exception as e:
             print(f"MCP connection error: {str(e)}")
             self.connected.clear()
-    
-    def start_connection(self, server_params: StdioServerParameters):
-        """Start connection in background thread"""
+
+    def start_connection(self, server_params: TcpServerParameters):
         def run():
             asyncio.set_event_loop(self.loop)
             self.loop.run_until_complete(self._connect(server_params))
@@ -75,42 +77,32 @@ class McpManager:
             self.server_thread.start()
 
     def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
-        """Synchronous wrapper for tool calls"""
         if not self.connected.is_set():
             raise ConnectionError("Not connected to MCP server")
 
         future = asyncio.run_coroutine_threadsafe(
             self.session.call_tool(tool_name, arguments=arguments),
             self.loop
-        )    
+        )
         return future.result()
-    
+
+
+
+
+# Initialize MCP manager and connect over TCP (host and port must match mcp-server.py)
 mcp_manager = McpManager()
-
-server_params = StdioServerParameters(
-    command="python",
-    args=["mcp-server.py"],
-    cwd=str(Path.cwd())
-)
-
+server_params = TcpServerParameters(host="localhost", port=8000)
 mcp_manager.start_connection(server_params)
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
 
-
-def extract_datetime(event_text):
-    return event_text.split(" | ")[-1]
-
 def format_event(event_text):
-    title_part, duration_part, description_part, location_part, datetime_part, = event_text.split(" | ", 4)
-
+    title_part, duration_part, description_part, location_part, datetime_part = event_text.split(" | ", 4)
     event_time = datetime.fromisoformat(datetime_part.strip())
-
     formatted_date = event_time.strftime("%d %B %Y")
     formatted_time = event_time.strftime("%H:%M")
     day_of_week = event_time.strftime("%A")
-
     return f"""Event: {title_part}
   Date: {formatted_date} ({day_of_week})
   Time: {formatted_time}
