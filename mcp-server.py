@@ -7,6 +7,9 @@ import re
 import pytz
 import os
 from dotenv import load_dotenv
+import os
+
+os.environ["MCP_WEBSOCKET"] = "1"
 
 mcp = FastMCP(
     name="MCP-server",
