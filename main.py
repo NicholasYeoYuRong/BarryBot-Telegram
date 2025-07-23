@@ -24,13 +24,13 @@ from openai import OpenAI
 load_dotenv()
 
 API_TOKEN = os.environ["TELEGRAM_TOKEN"]
-MODEL_NAME = os.environ["MODEL_NAME"]
+# MODEL_NAME = os.environ["MODEL_NAME"]
 ICAL_URL = os.environ["ICAL_URL"]
 agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
 agent_access_key = os.environ["agent_access_key"]
 
 BOT = telebot.TeleBot(token=API_TOKEN)
-MODEL = MODEL_NAME
+# MODEL = MODEL_NAME
 
 mcpmanager = None
 
