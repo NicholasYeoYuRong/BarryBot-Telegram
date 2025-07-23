@@ -17,6 +17,7 @@ from datetime import datetime
 from telebot import types
 import requests
 import time
+from openai import OpenAI
 
 
 # Load environment viariables
@@ -25,6 +26,8 @@ load_dotenv()
 API_TOKEN = os.environ["TELEGRAM_TOKEN"]
 MODEL_NAME = os.environ["MODEL_NAME"]
 ICAL_URL = os.environ["ICAL_URL"]
+agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
+agent_access_key = os.environ["agent_access_key"]
 
 BOT = telebot.TeleBot(token=API_TOKEN)
 MODEL = MODEL_NAME
@@ -610,13 +613,13 @@ def reply_func(message):
             {'role': 'user', 'content': message.text}
         )
 
-        response = ollama.chat(
-            model=MODEL,
+        response = client.chat.completions.create(
+            model="n/a",
             messages=conversation_history[chat_id]
         )
 
         # Add assistant response to history
-        response_text = response['message']['content']
+        response_text = response.choices[0].message.content.strip()
         conversation_history[chat_id].append(
             {'role': 'assistant', 'content': response_text}
         )
@@ -650,6 +653,11 @@ def run_bot():
             time.sleep(10)  # Wait before restarting
 
 if __name__ == "__main__":
+    client = OpenAI(
+        base_url=agent_endpoint,
+        api_key=agent_access_key
+    )
+
     # Start in a separate thread for better control
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
