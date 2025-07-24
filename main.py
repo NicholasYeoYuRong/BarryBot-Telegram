@@ -19,88 +19,27 @@ import requests
 import time
 from openai import OpenAI
 
+from ical_handler import (
+    get_ical_events,
+    get_all_ical_events,
+    add_ical_event,
+    delete_calendar_event,
+    parse_natural_time,
+)
+
 
 # Load environment viariables
 load_dotenv()
 
 API_TOKEN = os.environ["TELEGRAM_TOKEN"]
-# MODEL_NAME = os.environ["MODEL_NAME"]
 ICAL_URL = os.environ["ICAL_URL"]
 agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
 agent_access_key = os.environ["agent_access_key"]
 
 BOT = telebot.TeleBot(token=API_TOKEN)
-# MODEL = MODEL_NAME
-
-mcpmanager = None
-
-class McpManager:
-    def __init__(self):
-        self.session = None
-        self.loop = asyncio.new_event_loop()
-        self.connected = threading.Event()
-        self.tools: List[Any] = []
-        self.server_thread = None
-
-    async def _connect(self , server_params: StdioServerParameters):
-        """Async connection handler"""
-        try:
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    self.session = session
-                    await session.initialize()
-
-                    # Cache tools list
-                    tools_result = await session.list_tools()
-                    self.tools = tools_result.tools
-                    print("\nConnected to server with tools:")
-                    for tool in self.tools:
-                        print(f" - {tool.name}: {tool.description}")
-
-                    self.connected.set()
-
-                    # Keep conenction alive
-                    while True:
-                        await asyncio.sleep(1)
-        
-        except Exception as e:
-            print(f"MCP connection error: {str(e)}")
-            self.connected.clear()
-    
-    def start_connection(self, server_params: StdioServerParameters):
-        """Start connection in background thread"""
-        def run():
-            asyncio.set_event_loop(self.loop)
-            self.loop.run_until_complete(self._connect(server_params))
-
-        if not self.server_thread or not self.server_thread.is_alive():
-            self.server_thread = threading.Thread(target=run, daemon=True)
-            self.server_thread.start()
-
-    def call_tool_sync(self, tool_name: str, arguments: Dict[str, Any]):
-        """Synchronous wrapper for tool calls"""
-        if not self.connected.is_set():
-            raise ConnectionError("Not connected to MCP server")
-
-        future = asyncio.run_coroutine_threadsafe(
-            self.session.call_tool(tool_name, arguments=arguments),
-            self.loop
-        )    
-        return future.result()
-    
-mcp_manager = McpManager()
-
-server_params = StdioServerParameters(
-    command="python",
-    args=["mcp-server.py"],
-    cwd=str(Path.cwd())
-)
-
-mcp_manager.start_connection(server_params)
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
-
 
 def extract_datetime(event_text):
     return event_text.split(" | ")[-1]
@@ -149,68 +88,25 @@ def reset_chat(message):
     conversation_history[message.chat.id] = []
     BOT.send_message(message.chat.id, "***CHAT RESETTED***")
 
-@BOT.message_handler(commands=['listItems'])
-def list_Items(message):
-    try:
-        if not mcp_manager.connected.is_set():
-            BOT.send_message("⚠️ Connecting to server...")
-            return
-        
-        items = "\n".join([f" - {tool.name}: {tool.description}"
-                           for tool in mcp_manager.tools])
-        BOT.send_message(message.chat.id, f"Available tools:\n{items}")
-
-    except Exception as e:
-        print(f"🚫 Unexpected error: {str(e)}")
-
-@BOT.message_handler(commands=['addition'])
-def addition_tool(message):
-    try:
-        
-        prompt = message.text.replace('/addition', '').strip()
-        number = prompt.split('+')
-        if not prompt:
-            BOT.send_message(message.chat.id, "Please specify the 2 number addition equation. Eg. '1 + 1' ")
-            return
-        
-        a = int(number[0].strip())
-        b = int(number[1].strip())
-
-        result = mcp_manager.call_tool_sync("add", {"a": a, "b": b})
-        BOT.send_message(message.chat.id, f"{a} + {b} = {result.content[0].text}")
-
-
-    except Exception as e:
-        print(f"🚫 Unexpected error: {str(e)}")
-
 @BOT.message_handler(commands=['myevents'])
 def list_calendar(message):
     try:
-        
-        result = mcp_manager.call_tool_sync("get_ical_events", {
-            "ical_url": ICAL_URL,
-            "max_results": 6
-        })
 
-        current_time  = datetime.now().astimezone()
-
-        data = [item for item in result.content]
+        events = get_ical_events(ICAL_URL, max_results=6)
+        current_time = datetime.now().astimezone()
 
         future_events = []
-        for event in data:
-            event_time_str = extract_datetime(event.text)
+        for event_text in events:
+            event_time_str = extract_datetime(event_text)
             event_time = datetime.fromisoformat(event_time_str)
             if event_time > current_time:
-                future_events.append((event_time, event.text))
-        
+                future_events.append((event_time, event_text))
+
         future_events.sort()
 
         formatted_events = []
-
         if not future_events:
-            formatted_events.append(
-                "Your schedule is free! There are no upcoming events!"
-            )
+            formatted_events.append("Your schedule is free! There are no upcoming events!")
         else:
             for i, (event_time, event_text) in enumerate(future_events, 1):
                 formatted_events.append(
@@ -218,7 +114,6 @@ def list_calendar(message):
                     f"  {format_event(event_text)}")
 
         structured_events = "\n\n".join(formatted_events)
-
         BOT.send_message(message.chat.id, f"===YOUR UPCOMING SCHEDULES===\n\n{structured_events}")
         
 
@@ -235,19 +130,16 @@ def start_delete_event(message):
     chat_id = message.chat.id
 
     try:
-        result = mcp_manager.call_tool_sync("get_all_ical_events", {
-            "ical_url": ICAL_URL
-        })
+        result = get_all_ical_events(ICAL_URL)
 
         current_time = datetime.now().astimezone()
-        data = [item for item in result.content]
 
         future_events = []
-        for event in data:
-            event_time_str = extract_datetime(event.text)
+        for event_text in result:
+            event_time_str = extract_datetime(event_text)
             event_time = datetime.fromisoformat(event_time_str)
             if event_time > current_time:
-                future_events.append((event_time, event.text))
+                future_events.append((event_time, event_text))
 
         if not future_events:
             return BOT.send_message(chat_id, "No upcoming events found to delete")
@@ -289,17 +181,14 @@ def handle_delete(call):
     try:
         _, event_name, event_time = call.data.split('_', 2)
 
-        result = mcp_manager.call_tool_sync("delete_calendar_event", {
-            "event_name": event_name,
-            "event_time": event_time
-        })
+        result = delete_calendar_event(event_name, event_time)
 
         BOT.edit_message_text(
             chat_id=chat_id,
             message_id=call.message.message_id,
-            text=f"{result.content[0].text.split(" @ ")[0]}\n\n"
+            text=f"{result.split(' @ ')[0]}\n\n"
                 f"Event: {event_name}\n"
-                f"Time: {datetime.fromisoformat(event_time).strftime('%Y-%m-%d  %H:%M')}"
+                f"Time: {datetime.fromisoformat(event_time).strftime('%Y-%m-%d %H:%M')}"
         )
 
     except Exception as e:
@@ -491,15 +380,15 @@ def handle_confirmation(call):
     if call.data == "event_confirm_yes":
         try:
             # Call your MCP tool
-            result = mcp_manager.call_tool_sync("add_ical_event", {
-                "event_name": event_data[chat_id]['name'],
-                "start_time": event_data[chat_id]['start_time'],
-                "duration_hours": event_data[chat_id]['duration'],
-                "description": event_data[chat_id].get('description', ''),
-                "location": event_data[chat_id].get('location', '')
-            })
+            result = add_ical_event(
+                event_name=event_data[chat_id]['name'],
+                start_time=event_data[chat_id]['start_time'],
+                duration_hours=event_data[chat_id]['duration'],
+                description=event_data[chat_id].get('description', ''),
+                location=event_data[chat_id].get('location', '')
+            )
             
-            BOT.send_message(chat_id, result.content[0].text)
+            BOT.send_message(chat_id, result)
         except Exception as e:
             BOT.send_message(chat_id, f"❌ Error adding event: {str(e)}")
     else:
@@ -662,6 +551,8 @@ if __name__ == "__main__":
     # Start in a separate thread for better control
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
+
+    print("Starting bot online!")
     
     # Keep main thread alive
     while True:
