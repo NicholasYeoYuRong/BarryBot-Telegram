@@ -588,14 +588,15 @@ def generate_image(message):
         s.join()
     
     except Exception as e:
-        BOT.reply_to(message, f"🚫 Unexpected error: {str(e)}")
+        BOT.reply_to(message, f"🚫 Unexpected error: You have no more free API credits !")
+        sending.stop()
+        s.join()
 
 
 # REPLYING TO USER MESSAGE #
 @BOT.message_handler(func=lambda message:True)
 def reply_func(message):
     try:
-
         # START TYPING INDICATOR #
         typing = TypingIndicator(BOT, message.chat.id)
         t = Thread(target=typing.run)
