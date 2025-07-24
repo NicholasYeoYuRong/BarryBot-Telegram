@@ -18,6 +18,7 @@ from telebot import types
 import requests
 import time
 from openai import OpenAI
+from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
 from ical_handler import (
     get_ical_events,
@@ -217,31 +218,58 @@ def handle_event_name(message):
     event_data[chat_id]['name'] = message.text
     user_states[chat_id] = 'awaiting_datetime'
 
+    calendar, step = DetailedTelegramCalendar().build()
+
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
 
     askmsg = BOT.send_message(
         chat_id,
         "📅 When is this happening?\n"
-        "Examples:\n"
-        "- Tomorrow 2pm OR 2:30pm \n"
-        "- 2023-12-25 14:30\n"
-        "- Next Friday 3pm OR 3:30pm\n"
-        "- Sunday 5pm OR 5.30pm",
-        reply_markup=markup
+        f"Select {LSTEP[step]}",
+        reply_markup=calendar
     )
 
-@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_datetime')
-def handle_datetime(message):
-    chat_id = message.chat.id
-    event_data[chat_id]['start_time'] = message.text
+@BOT.callback_query_handler(func=DetailedTelegramCalendar.func())
+def handle_calendar_query(call):
+    chat_id = call.message.chat.id
+    result, key, step = DetailedTelegramCalendar().process(call.data)
+
+    if not result and key:
+        BOT.edit_message_text(f"Select {LSTEP[step]}",
+                              chat_id,
+                              call.message.message_id,
+                              reply_markup=key)
+    elif result:
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("Confirm", callback_data=f"confirm_date_{result}"),
+            types.InlineKeyboardButton("Change Date", callback_data="change_date"),
+        )
+
+        BOT.edit_message_text(f"Selected date: {result}",
+                              chat_id,
+                              call.message.message_id,
+                              reply_markup=markup)
+
+@BOT.callback_query_handler(func=lambda call: call.data.startswith('confirm_date_'))
+def handle_datetime(call):
+    chat_id = call.message.chat.id
+    event_data[chat_id]['start_time'] = call.data.split('_', 2)[2]
     user_states[chat_id] = 'awaiting_duration'
     
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip (use 1 hour)", callback_data="skip_duration"))
     markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
-    
+
+    BOT.edit_message_text(
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        text=f"Date Set to: {event_data[chat_id]['start_time']}\n"
+    )
+
     BOT.send_message(
         chat_id,
         "⏳ How long will it last in hours? (Default: 1 hour)",
