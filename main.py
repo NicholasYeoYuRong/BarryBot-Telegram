@@ -588,7 +588,9 @@ def generate_image(message):
         s.join()
     
     except Exception as e:
-        BOT.reply_to(message, f"🚫 Unexpected error: {str(e)}")
+        BOT.reply_to(message, f"🚫 Unexpected error: Your free credits have expired!")
+        sending.stop()
+        s.join()
 
 
 # REPLYING TO USER MESSAGE #
