@@ -289,7 +289,6 @@ def confirm_date(call):
     chat_id = call.message.chat.id
     date_str = call.data.split('_', 2)[2]
     event_data[chat_id]['date_only'] = datetime.strptime(date_str, "%Y-%m-%d").date()
-    event_data[chat_id]['datetime'] = None
 
     user_states[chat_id] = 'awaiting_time'
 
@@ -299,7 +298,6 @@ def confirm_date(call):
         reply_markup=time_picker.create_time_picker(chat_id, event_data[chat_id]['date_only'])
     )
 
-## ERROR HERE!!!! ####
 @BOT.callback_query_handler(func=lambda call: call.data.startswith('time_'))
 def handle_time_selection(call):
     """Handle time picker interactions"""
@@ -339,6 +337,9 @@ def handle_time_selection(call):
                 reply_markup=markup
             )
         else:
+            user_states.pop(chat_id, None)
+            event_data.pop(chat_id, None)
+            time_picker.clear_selection(chat_id)
             BOT.send_message(chat_id, "Time selection cancelled")
             BOT.delete_message(chat_id, message_id)
 
