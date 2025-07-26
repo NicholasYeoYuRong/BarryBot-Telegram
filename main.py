@@ -205,7 +205,15 @@ def handle_delete(call):
 def start_add_event(message):
     chat_id = message.chat.id
     user_states[chat_id] = 'awaiting_event_name'
-    event_data[chat_id] = {'duration': 1.0}  # Set default duration
+    event_data[chat_id] = {
+        'name': None,
+        'datetime': None,
+        'date_only': None,
+        'duration': 1.0,  # Default duration
+        'description': None,
+        'location': None
+    }  # Set default duration
+    time_picker.clear_selection(chat_id) # Clear any previous time selection
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
@@ -281,6 +289,7 @@ def confirm_date(call):
     chat_id = call.message.chat.id
     date_str = call.data.split('_', 2)[2]
     event_data[chat_id]['date_only'] = datetime.strptime(date_str, "%Y-%m-%d").date()
+    event_data[chat_id]['datetime'] = None
 
     user_states[chat_id] = 'awaiting_time'
 
@@ -290,6 +299,7 @@ def confirm_date(call):
         reply_markup=time_picker.create_time_picker(chat_id, event_data[chat_id]['date_only'])
     )
 
+## ERROR HERE!!!! ####
 @BOT.callback_query_handler(func=lambda call: call.data.startswith('time_'))
 def handle_time_selection(call):
     """Handle time picker interactions"""
@@ -339,9 +349,11 @@ def skip_duration(call):
     
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Skip description", callback_data="skip_description"))
-    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
-    
+    markup.add(
+        types.InlineKeyboardButton("Skip description", callback_data="skip_description"),
+        types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event")
+    )
+
     BOT.edit_message_text(
         chat_id=chat_id,
         message_id=call.message.message_id,
@@ -367,9 +379,11 @@ def handle_duration(message):
     
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Skip description", callback_data="skip_description"))
-    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
-    
+    markup.add(
+        types.InlineKeyboardButton("Skip description", callback_data="skip_description"),
+        types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event")
+    )
+
     BOT.send_message(
         chat_id,
         "📝 Any description? (Optional)",
@@ -384,8 +398,10 @@ def skip_description(call):
     
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Skip location", callback_data="skip_location"))
-    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
+    markup.add(
+        types.InlineKeyboardButton("Skip location", callback_data="skip_location"),
+        types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event")
+    )
     
     BOT.edit_message_text(
         chat_id=chat_id,
@@ -407,8 +423,10 @@ def handle_description(message):
     
     # Create inline skip button
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Skip location", callback_data="skip_location"))
-    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
+    markup.add(
+        types.InlineKeyboardButton("Skip location", callback_data="skip_location"),
+        types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event")
+    )
     
     BOT.send_message(
         chat_id,
@@ -486,8 +504,11 @@ def handle_confirmation(call):
 @BOT.callback_query_handler(func=lambda call: call.data == "cancel_add_event")
 def cancel_add_event(call):
     chat_id = call.message.chat.id
+
+    # Clean up user state and event data
     user_states.pop(chat_id, None)
     event_data.pop(chat_id, None)
+    time_picker.clear_selection(chat_id)
     
     BOT.edit_message_text(
         chat_id=chat_id,

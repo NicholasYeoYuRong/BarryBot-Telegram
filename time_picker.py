@@ -5,6 +5,10 @@ from typing import Dict, Optional, Tuple
 class TimePicker:
     def __init__(self):
         self.user_selections: Dict[int, datetime.datetime] = {}  # Store datetime objects instead of time
+
+    def clear_selection(self, chat_id: int):
+        """Clear any stored time selection for this chat"""
+        self.user_selections.pop(chat_id, None)
         
     def create_time_picker(self, chat_id: int, base_date: datetime.date) -> types.InlineKeyboardMarkup:
         """Create time picker attached to a specific date"""
