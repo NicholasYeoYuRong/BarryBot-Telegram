@@ -2,30 +2,22 @@ from dotenv import load_dotenv
 from threading import Thread
 from collections import defaultdict
 from io import BytesIO
-import ollama
 import telebot
 import os
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from contextlib import AsyncExitStack
-import asyncio
-from typing import Any, Dict, List
 from tele_indicators import TypingIndicator, SendingPhotoIndicator
-import threading
-from pathlib import Path
 from datetime import datetime
 from telebot import types
 import requests
 import time
 from openai import OpenAI
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+from time_picker import TimePicker
 
 from ical_handler import (
     get_ical_events,
     get_all_ical_events,
     add_ical_event,
     delete_calendar_event,
-    parse_natural_time,
 )
 
 
@@ -38,6 +30,8 @@ agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
 agent_access_key = os.environ["agent_access_key"]
 
 BOT = telebot.TeleBot(token=API_TOKEN)
+time_picker = TimePicker()
+
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
@@ -220,12 +214,12 @@ def handle_event_name(message):
 
     calendar, step = DetailedTelegramCalendar().build()
 
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
+    # markup = types.InlineKeyboardMarkup()
+    # markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
 
     askmsg = BOT.send_message(
         chat_id,
-        "📅 When is this happening?\n"
+        "📅 When is this happening?\n\n"
         f"Select {LSTEP[step]}",
         reply_markup=calendar
     )
@@ -235,46 +229,96 @@ def handle_calendar_query(call):
     chat_id = call.message.chat.id
     result, key, step = DetailedTelegramCalendar().process(call.data)
 
+    # Check if the result is a valid date
     if not result and key:
-        BOT.edit_message_text(f"Select {LSTEP[step]}",
+        BOT.edit_message_text("📅 When is this happening?\n\n"
+                            f"Select {LSTEP[step]}",
                               chat_id,
                               call.message.message_id,
                               reply_markup=key)
     elif result:
-
         markup = types.InlineKeyboardMarkup()
         markup.add(
             types.InlineKeyboardButton("Confirm", callback_data=f"confirm_date_{result}"),
             types.InlineKeyboardButton("Change Date", callback_data="change_date"),
         )
 
-        BOT.edit_message_text(f"Selected date: {result}",
+        BOT.edit_message_text(f"📅 Selected date: {result}",
                               chat_id,
                               call.message.message_id,
                               reply_markup=markup)
 
-@BOT.callback_query_handler(func=lambda call: call.data.startswith('confirm_date_'))
-def handle_datetime(call):
+# Catches the "Change Date" callback
+@BOT.callback_query_handler(func=lambda call: call.data == "change_date")
+def change_date(call):
     chat_id = call.message.chat.id
-    event_data[chat_id]['start_time'] = call.data.split('_', 2)[2]
-    user_states[chat_id] = 'awaiting_duration'
-    
-    # Create inline skip button
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Skip (use 1 hour)", callback_data="skip_duration"))
-    markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
+    user_states[chat_id] = 'awaiting_datetime'
+
+    calendar, step = DetailedTelegramCalendar().build()
 
     BOT.edit_message_text(
-        chat_id=chat_id,
-        message_id=call.message.message_id,
-        text=f"Date Set to: {event_data[chat_id]['start_time']}\n"
+        "📅 When is this happening?\n\n"
+        f"Select {LSTEP[step]}",
+        chat_id,
+        call.message.message_id,
+        reply_markup=calendar
     )
+
+@BOT.callback_query_handler(func=lambda call: call.data.startswith('confirm_date_'))
+def confirm_date(call):
+    chat_id = call.message.chat.id
+    date_str = call.data.split('_', 2)[2]
+    event_data[chat_id]['date_only'] = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    user_states[chat_id] = 'awaiting_time'
 
     BOT.send_message(
         chat_id,
-        "⏳ How long will it last in hours? (Default: 1 hour)",
-        reply_markup=markup
+        "🕒 Select a time:",
+        reply_markup=time_picker.create_time_picker(chat_id, event_data[chat_id]['date_only'])
     )
+
+@BOT.callback_query_handler(func=lambda call: call.data.startswith('time_'))
+def handle_time_selection(call):
+    """Handle time picker interactions"""
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+
+    base_date = event_data[chat_id]['date_only']
+
+    should_continue, selected_dt = time_picker.handle_callback(call, base_date)
+
+    if should_continue:
+        BOT.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=time_picker.create_time_picker(chat_id, base_date),
+        )
+    else:
+        if selected_dt:
+            event_data[chat_id]['datetime'] = selected_dt.strftime("%Y-%m-%d %H:%M")
+            user_states[chat_id] = 'awaiting_duration'
+
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton("Skip (use 1 hour)", callback_data="skip_duration"),
+                types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event")
+            )
+
+            BOT.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=f"📅 DateTime set to: {selected_dt.strftime('%Y-%m-%d %H:%M')}\n\n"
+            )
+
+            BOT.send_message(
+                chat_id,
+                "⏳ How long will it last? (Default: 1 hour)",
+                reply_markup=markup
+            )
+        else:
+            BOT.send_message(chat_id, "Time selection cancelled")
+            BOT.delete_message(chat_id, message_id)
 
 @BOT.callback_query_handler(func=lambda call: call.data == "skip_duration")
 def skip_duration(call):
@@ -385,7 +429,7 @@ def confirm_and_add_event(chat_id):
     confirm_msg = (
         "✅ Please confirm:\n\n"
         f"Event: {event['name']}\n"
-        f"Time: {event['start_time']}\n"
+        f"Time: {event['datetime']}\n"
         f"Duration: {event['duration']} hours\n"
         f"Description: {event.get('description', 'None')}\n"
         f"Location: {event.get('location', 'None')}\n\n"
@@ -407,10 +451,10 @@ def handle_confirmation(call):
     chat_id = call.message.chat.id
     if call.data == "event_confirm_yes":
         try:
-            # Call your MCP tool
+            # Add event to calendar
             result = add_ical_event(
                 event_name=event_data[chat_id]['name'],
-                start_time=event_data[chat_id]['start_time'],
+                start_time=event_data[chat_id]['datetime'],
                 duration_hours=event_data[chat_id]['duration'],
                 description=event_data[chat_id].get('description', ''),
                 location=event_data[chat_id].get('location', '')

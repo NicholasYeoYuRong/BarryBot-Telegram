@@ -8,8 +8,6 @@ dependencies = [
     "caldav==2.0.1",
     "icalendar==6.3.1",
     "ics==0.7.2",
-    "mcp==1.9.4",
-    "ollama==0.4.8",
     "openai>=1.97.1",
     "psutil==7.0.0",
     "pydantic==2.11.5",

@@ -5,13 +5,11 @@ recurring-ical-events==3.8.0
 pytz==2025.2
 tzlocal==5.3.1
 python-dotenv==1.1.0
-requests==2.32.3     
-ollama==0.4.8    
+requests==2.32.3       
 psutil==7.0.0
 pydantic==2.11.5
 pydantic-core==2.33.2
 pydantic-settings==2.10.1
-mcp==1.9.4
 vobject==0.9.9
 ics==0.7.2
 openai>=1.97.1
