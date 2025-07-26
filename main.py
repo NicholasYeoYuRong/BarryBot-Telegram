@@ -78,16 +78,6 @@ def extract_event_name(event_text: str) -> str:
 def extract_event_time(event_text: str) -> str:
     return event_text.split(" | ")[-1] ## CHANGE TO " | "
 
-########################## Authorisation denied ##################################
-@BOT.message_handler(commands=['addevent'])
-def deny_access(message):
-    BOT.reply_to(message, "Access denied: You are not authorized.")
-
-@BOT.message_handler(commands=['deleteEvent'])
-def deny_access(message):
-    BOT.reply_to(message, "Access denied: You are not authorized.")
-##################################################################################
-
 # /start #
 @BOT.message_handler(commands=['start'])
 def welcome(message):
@@ -504,6 +494,16 @@ def cancel_add_event(call):
         message_id=call.message.message_id,
         text="Event creation cancelled. You can start over with /addevent"
     )
+
+########################## Authorisation denied ##################################
+@BOT.message_handler(commands=['addevent'])
+def deny_access_add(message):
+    BOT.reply_to(message, "Access denied: You are not authorized.")
+
+@BOT.message_handler(commands=['deleteEvent'])
+def deny_access_delete(message):
+    BOT.reply_to(message, "Access denied: You are not authorized.")
+##################################################################################
 
 
 
