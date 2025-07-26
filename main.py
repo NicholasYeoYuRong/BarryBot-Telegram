@@ -29,12 +29,18 @@ ICAL_URL = os.environ["ICAL_URL"]
 agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
 agent_access_key = os.environ["agent_access_key"]
 
+ALLOWED_USERS = ["Nicholas_yowo", "chzcookie"]
+
 BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
 
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
+
+# Check if user is authorized
+def is_allowed_user(message: types.Message) -> bool:
+    return message.from_user.username in ALLOWED_USERS
 
 def extract_datetime(event_text):
     return event_text.split(" | ")[-1]
@@ -61,10 +67,10 @@ def format_inline_event(event_text):
     event_time = datetime.fromisoformat(datetime_part)
 
     formatted_date = event_time.strftime("%d %B %Y")
-    formated_time = event_time.strftime("%H:%M")
+    formatted_time = event_time.strftime("%H:%M")
     day_of_week = event_time.strftime("%A")
 
-    return f"""{title_part}, {formatted_date}, {day_of_week} @ {formated_time}"""
+    return f"""{title_part}, {formatted_date}, {day_of_week} @ {formatted_time}"""
 
 def extract_event_name(event_text: str) -> str:
     return event_text.split(" | ")[0] ## CHANGE TO " | "
@@ -72,11 +78,26 @@ def extract_event_name(event_text: str) -> str:
 def extract_event_time(event_text: str) -> str:
     return event_text.split(" | ")[-1] ## CHANGE TO " | "
 
+########################## Authorisation denied ##################################
+@BOT.message_handler(commands=['addevent'])
+def deny_access(message):
+    BOT.reply_to(message, "Access denied: You are not authorized.")
+
+@BOT.message_handler(commands=['deleteEvent'])
+def deny_access(message):
+    BOT.reply_to(message, "Access denied: You are not authorized.")
+##################################################################################
+
 # /start #
 @BOT.message_handler(commands=['start'])
 def welcome(message):
-    welcome_text = f'Hi {message.from_user.first_name}, My name is Barry! How can I assist you today?'
-    BOT.send_message(message.chat.id, welcome_text)
+    if message.from_user.username == "Nicholas_yowo":
+        BOT.send_message(message.chat.id, f"Hello, Creator {message.from_user.username}! How can I assist you today?")
+    elif message.from_user.username == "chzcookie":
+        BOT.send_message(message.chat.id, f"Hello, My Creator's Lovely Girlfriend, {message.from_user.first_name}! What do I owe this honour today?")
+    else:
+        welcome_text = f'Hi {message.from_user.first_name}, My name is Barry! How can I assist you today?'
+        BOT.send_message(message.chat.id, welcome_text)
 
 @BOT.message_handler(commands=['reset'])
 def reset_chat(message):
@@ -120,7 +141,7 @@ user_states = {}  # Track conversation state
 event_data = {}    # Store temporary event data
 
 ### DELETE EVENTS FROM CALENDAR ###
-@BOT.message_handler(commands=['deleteEvent'])
+@BOT.message_handler(commands=['deleteEvent'], func=is_allowed_user)
 def start_delete_event(message):
     chat_id = message.chat.id
 
@@ -190,7 +211,7 @@ def handle_delete(call):
         BOT.answer_callback_query(call.id, f"Error: {str(e)}", show_alert=True)
 
 ### ADDING EVENTS TO CALENDAR ###
-@BOT.message_handler(commands=['addevent'])
+@BOT.message_handler(commands=['addevent'], func=is_allowed_user)
 def start_add_event(message):
     chat_id = message.chat.id
     user_states[chat_id] = 'awaiting_event_name'
@@ -199,7 +220,7 @@ def start_add_event(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
     
-    askmsg = BOT.send_message(
+    BOT.send_message(
         chat_id,
         "Let's add an event!\n\n"
         "Please send me the event name:",
@@ -209,6 +230,7 @@ def start_add_event(message):
 @BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_event_name')
 def handle_event_name(message):
     chat_id = message.chat.id
+    message_id = message.message_id
     event_data[chat_id]['name'] = message.text
     user_states[chat_id] = 'awaiting_datetime'
 
@@ -217,7 +239,7 @@ def handle_event_name(message):
     # markup = types.InlineKeyboardMarkup()
     # markup.add(types.InlineKeyboardButton("Cancel", callback_data="cancel_add_event"))
 
-    askmsg = BOT.send_message(
+    BOT.send_message(
         chat_id,
         "📅 When is this happening?\n\n"
         f"Select {LSTEP[step]}",
