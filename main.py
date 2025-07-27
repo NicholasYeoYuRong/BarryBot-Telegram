@@ -84,7 +84,7 @@ def welcome(message):
     if message.from_user.username == "Nicholas_yowo":
         BOT.send_message(message.chat.id, f"Hello, Creator {message.from_user.username}! How can I assist you today?")
     elif message.from_user.username == "chzcookie":
-        BOT.send_message(message.chat.id, f"Hello, My Creator's Lovely Girlfriend, {message.from_user.first_name}! What do I owe this honour today?")
+        BOT.send_message(message.chat.id, f"Hello, My Creator's Lovely Queen {message.from_user.first_name}! What do I owe this honour today?")
     else:
         welcome_text = f'Hi {message.from_user.first_name}, My name is Barry! How can I assist you today?'
         BOT.send_message(message.chat.id, welcome_text)
@@ -610,9 +610,14 @@ def reply_func(message):
         # Get or initialize conversation history for this chat
         chat_id = message.chat.id
         if chat_id not in conversation_history:
-            conversation_history[chat_id][-6:] = [
-                {'role': 'system', 'content': "Keep response concise"}
-            ]
+            if message.from_user.username == "chzcookie":
+                conversation_history[chat_id] = [
+                    {'role': 'system', 'content': "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."}
+                ]
+            else:
+                conversation_history[chat_id][-6:] = [
+                    {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise."}
+                ]
 
         # Add user message to history
         conversation_history[chat_id].append(
