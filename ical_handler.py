@@ -136,13 +136,13 @@ def parse_natural_time(time_str: str) -> datetime:
     except Exception as e:
         raise ValueError(f"Could not parse time: {time_str}") from e
 
-def get_ical_events(ical_url: str, max_results: int = 10) -> list[str]:
+def get_ical_events(ical_url: str) -> list[str]:
     """Fetch events from an iCal feed URL."""
     response = httpx.get(ical_url)
     calendar = Calendar(response.text)
 
     events = []
-    for e in list(calendar.events)[:max_results]:
+    for e in list(calendar.events):
         events.append(
             f"{e.name} | "
             f"{e.duration if e.duration else 'None'} | "

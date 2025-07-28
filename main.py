@@ -84,7 +84,7 @@ def welcome(message):
     if message.from_user.username == "Nicholas_yowo":
         BOT.send_message(message.chat.id, f"Hello, Creator {message.from_user.username}! How can I assist you today?")
     elif message.from_user.username == "chzcookie":
-        BOT.send_message(message.chat.id, f"Hello, My Creator's Lovely Queen {message.from_user.first_name}! What do I owe this honour today?")
+        BOT.send_message(message.chat.id, f"Hello my Creator's Lovely Queen {message.from_user.first_name}! What do I owe this honour today?")
     else:
         welcome_text = f'Hi {message.from_user.first_name}, My name is Barry! How can I assist you today?'
         BOT.send_message(message.chat.id, welcome_text)
@@ -94,21 +94,60 @@ def reset_chat(message):
     conversation_history[message.chat.id] = []
     BOT.send_message(message.chat.id, "***CHAT RESETTED***")
 
-@BOT.message_handler(commands=['myevents'])
+@BOT.message_handler(commands=['upcomingschedule'])
 def list_calendar(message):
     try:
 
-        events = get_ical_events(ICAL_URL, max_results=6)
+        events = get_ical_events(ICAL_URL)
         current_time = datetime.now().astimezone()
 
         future_events = []
         for event_text in events:
             event_time_str = extract_datetime(event_text)
-            event_time = datetime.fromisoformat(event_time_str)
-            if event_time > current_time:
+            event_time = datetime.fromisoformat(event_time_str).astimezone()
+
+            if event_time >= current_time:
                 future_events.append((event_time, event_text))
 
         future_events.sort()
+
+        print(f"Total events from calendar: {len(events)}")
+        print(f"Future events after filtering: {len(future_events)}")
+
+        formatted_events = []
+        if not future_events:
+            formatted_events.append("Your schedule is free! There are no upcoming events!")
+        else:
+            for i, (event_time, event_text) in enumerate(future_events[:5], 1):
+                formatted_events.append(
+                    f"SCHEDULE {i}:\n"
+                    f"  {format_event(event_text)}")
+
+        structured_events = "\n\n".join(formatted_events)
+        BOT.send_message(message.chat.id, f"===YOUR UPCOMING SCHEDULES===\n\n{structured_events}")
+    
+    except Exception as e:
+        print(f"🚫 Unexpected error: {str(e)}")
+
+@BOT.message_handler(commands=['allschedule'])
+def list_calendar(message):
+    try:
+
+        events = get_ical_events(ICAL_URL)
+        current_time = datetime.now().astimezone()
+
+        future_events = []
+        for event_text in events:
+            event_time_str = extract_datetime(event_text)
+            event_time = datetime.fromisoformat(event_time_str).astimezone()
+
+            if event_time >= current_time:
+                future_events.append((event_time, event_text))
+
+        future_events.sort()
+
+        print(f"Total events from calendar: {len(events)}")
+        print(f"Future events after filtering: {len(future_events)}")
 
         formatted_events = []
         if not future_events:
@@ -121,8 +160,7 @@ def list_calendar(message):
 
         structured_events = "\n\n".join(formatted_events)
         BOT.send_message(message.chat.id, f"===YOUR UPCOMING SCHEDULES===\n\n{structured_events}")
-        
-
+    
     except Exception as e:
         print(f"🚫 Unexpected error: {str(e)}")
 
@@ -131,7 +169,7 @@ user_states = {}  # Track conversation state
 event_data = {}    # Store temporary event data
 
 ### DELETE EVENTS FROM CALENDAR ###
-@BOT.message_handler(commands=['deleteEvent'], func=is_allowed_user)
+@BOT.message_handler(commands=['deleteschedule'], func=is_allowed_user)
 def start_delete_event(message):
     chat_id = message.chat.id
 
@@ -164,7 +202,7 @@ def start_delete_event(message):
 
         BOT.send_message(
             chat_id,
-            "==============DELETE AN EVENT==============\n\n"
+            "=========DELETE AN EVENT=======\n\n"
             "🗑️ Which event do you want to remove?",
             reply_markup=markup
         )
@@ -178,7 +216,7 @@ def cancel_delete(call):
     BOT.edit_message_text(
         chat_id=chat_id,
         message_id=call.message.message_id,
-        text="Deletion cancelled. You can start over with /deleteEvent"
+        text="Deletion cancelled. You can start over with /deleteschedule"
     )
 
 @BOT.callback_query_handler(func=lambda call: call.data.startswith('delete_'))
@@ -201,7 +239,7 @@ def handle_delete(call):
         BOT.answer_callback_query(call.id, f"Error: {str(e)}", show_alert=True)
 
 ### ADDING EVENTS TO CALENDAR ###
-@BOT.message_handler(commands=['addevent'], func=is_allowed_user)
+@BOT.message_handler(commands=['addschedule'], func=is_allowed_user)
 def start_add_event(message):
     chat_id = message.chat.id
     user_states[chat_id] = 'awaiting_event_name'
@@ -495,7 +533,7 @@ def handle_confirmation(call):
         except Exception as e:
             BOT.send_message(chat_id, f"❌ Error adding event: {str(e)}")
     else:
-        BOT.send_message(chat_id, "Event cancelled. Start over with /addevent")
+        BOT.send_message(chat_id, "Event cancelled. Start over with /addschedule")
     
     # Clean up
     user_states.pop(chat_id, None)
@@ -514,15 +552,15 @@ def cancel_add_event(call):
     BOT.edit_message_text(
         chat_id=chat_id,
         message_id=call.message.message_id,
-        text="Event creation cancelled. You can start over with /addevent"
+        text="Event creation cancelled. You can start over with /addschedule"
     )
 
 ########################## Authorisation denied ##################################
-@BOT.message_handler(commands=['addevent'])
+@BOT.message_handler(commands=['addschedule'])
 def deny_access_add(message):
     BOT.reply_to(message, "Access denied: You are not authorized.")
 
-@BOT.message_handler(commands=['deleteEvent'])
+@BOT.message_handler(commands=['deleteschedule'])
 def deny_access_delete(message):
     BOT.reply_to(message, "Access denied: You are not authorized.")
 ##################################################################################
