@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from threading import Thread
 from collections import defaultdict
 from io import BytesIO
+import pytz
 import telebot
 import os
 from tele_indicators import TypingIndicator, SendingPhotoIndicator
@@ -12,6 +13,9 @@ import time
 from openai import OpenAI
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from time_picker import TimePicker
+from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 from ical_handler import (
     get_ical_events,
@@ -34,9 +38,72 @@ ALLOWED_USERS = ["Nicholas_yowo", "chzcookie"]
 BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
 
+scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Singapore"))
+scheduler.start()
+
+# Register a shutdown hook to stop the scheduler gracefully
+atexit.register(lambda: scheduler.shutdown())
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
+
+# Restore scheduled jobs
+def restore_scheduled_jobs():
+    for chat_id in get_all_subscribed_chats():
+        job_id = f"positive_msg_{chat_id}"
+        if not scheduler.get_job(job_id):
+            scheduler.add_job(
+                lambda: positive_message(chat_id),
+                'cron',
+                hour=8,
+                minute=0,
+                id=job_id
+            )
+
+# Positive message job
+def positive_message(chat_id):
+    """Send a daily positive message to the user."""
+
+    try:
+        if chat_id not in conversation_history:
+            if get_user_username(chat_id) == "chzcookie":
+                system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
+                message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
+            else:
+                system_content = "You are a helpful assistant. Keep responses concise."
+                message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
+
+            conversation_history[chat_id][:-6] = [
+                {'role': 'system', 'content': system_content}
+            ]
+
+        # Add user message to history
+        conversation_history[chat_id].append(
+            {'role': 'user', 'content': message_content}
+        )
+
+        response = client.chat.completions.create(
+            model="n/a",
+            messages=conversation_history[chat_id],
+            temperature=0.9
+        )
+
+        ## Add assistant's response to conversation history ##
+        response_text = response.choices[0].message.content.strip()
+        conversation_history[chat_id].append(
+            {'role': 'assistant', 'content': response_text}
+        )
+        for i in range(0, len(response_text), 4000):
+            chunk = response_text[i:i+4000]
+            if i == 0:
+                BOT.send_message(chat_id, chunk)
+            else:
+                BOT.send_message(chat_id, chunk)
+
+    except Exception as e:
+        print(f"Failed to send to {chat_id}: {e}")
+        delete_user(chat_id)
+        scheduler.remove_job(f"positive_msg_{chat_id}")
 
 # Check if user is authorized
 def is_allowed_user(message: types.Message) -> bool:
@@ -88,6 +155,25 @@ def welcome(message):
     else:
         welcome_text = f'Hi {message.from_user.first_name}, My name is Barry! How can I assist you today?'
         BOT.send_message(message.chat.id, welcome_text)
+    
+    BOT.send_message(message.chat.id, "Type /help to see available commands.")
+
+@BOT.message_handler(commands=['help'])
+def help_command(message):
+    help_text = (
+        "Here are the commands you can use:\n\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n"
+        "/subscribe - Subscribe to daily positive messages\n"
+        "/unsubscribe - Unsubscribe from daily positive messages\n"
+        "/addschedule - Add an event to your calendar\n"
+        "/deleteschedule - Delete an event from your calendar\n"
+        "/upcomingschedule - List your upcoming schedules\n"
+        "/allschedule - List all your schedules\n"
+        "/reset - Reset the chat history\n"
+    )
+    BOT.send_message(message.chat.id, help_text)
+        
 
 @BOT.message_handler(commands=['reset'])
 def reset_chat(message):
@@ -635,6 +721,61 @@ def generate_image(message):
         sending.stop()
         s.join()
 
+## SUBSCRIBE TO DAILY POSITIVE MESSAGES ##
+@BOT.message_handler(commands=['subscribe'])
+def subscribe(message):
+    chat_id = message.chat.id
+    username = message.from_user.username
+
+    if is_subscribed(chat_id):
+        BOT.reply_to(
+            message, 
+            "You are already subscribed to daily positive messages! 🌟\n"
+            "You can unsubscribe at any time by sending /unsubscribe."
+        )
+        return
+
+    # Store user in database
+    save_user(chat_id, username)
+
+    # Create unique job ID for this user
+    job_id = f"positive_msg_{chat_id}"
+    if not scheduler.get_job(job_id):
+        scheduler.add_job(
+            lambda: positive_message(chat_id),  # Wrapped in lambda
+            'cron',
+            hour=8,
+            minute=0,
+            id=job_id,
+            replace_existing=True
+        )
+
+    BOT.send_message(
+        chat_id, 
+        "You will receive daily positive messages at 8 am! 🌟\n"
+        "You can unsubscribe at any time by sending /unsubscribe."
+    )
+
+
+## UNSUBSCRIBE FROM DAILY POSITIVE MESSAGES ##
+@BOT.message_handler(commands=['unsubscribe'])
+def unsubscribe(message):
+    chat_id = message.chat.id
+
+    if not is_subscribed(chat_id):
+        BOT.send_message(chat_id, "You're not currently subscribed.")
+        return
+
+    # Delete user from database
+    delete_user(chat_id)
+    scheduler.remove_job(f"positive_msg_{chat_id}")
+
+    BOT.send_message(
+        chat_id,
+        "🔕 You've been unsubscribed.\n"
+        "Use /subscribe to restart messages."
+    )
+
 
 # REPLYING TO USER MESSAGE #
 @BOT.message_handler(func=lambda message:True)
@@ -649,7 +790,7 @@ def reply_func(message):
         chat_id = message.chat.id
         if chat_id not in conversation_history:
             if message.from_user.username == "chzcookie":
-                conversation_history[chat_id] = [
+                conversation_history[chat_id][-6:] = [
                     {'role': 'system', 'content': "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."}
                 ]
             else:
@@ -710,6 +851,8 @@ if __name__ == "__main__":
     # Start in a separate thread for better control
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
+
+    restore_scheduled_jobs()
 
     print("Starting bot online!")
     
