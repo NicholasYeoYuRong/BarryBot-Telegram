@@ -54,8 +54,8 @@ def restore_scheduled_jobs():
             scheduler.add_job(
                 lambda: positive_message(chat_id),
                 'cron',
-                hour=10,
-                minute=21,
+                hour=8,
+                minute=0,
                 id=job_id
             )
 
