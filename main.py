@@ -55,7 +55,7 @@ def restore_scheduled_jobs():
                 lambda: positive_message(chat_id),
                 'cron',
                 hour=10,
-                minute=14,
+                minute=21,
                 id=job_id
             )
 
@@ -65,11 +65,11 @@ def positive_message(chat_id):
     try:
 
         system_content = "You are a helpful assistant. Keep responses concise."
-        message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
+        message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
 
         if get_user_username(chat_id) == "chzcookie":
             system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
-            message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
+            message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
 
         if chat_id not in conversation_history:
             conversation_history[chat_id][:-6] = [
