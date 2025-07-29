@@ -55,8 +55,8 @@ def restore_scheduled_jobs():
             scheduler.add_job(
                 lambda: positive_message(chat_id),
                 'cron',
-                hour=8,
-                minute=0,
+                hour=9,
+                minute=39,
                 id=job_id
             )
 
@@ -65,15 +65,16 @@ def positive_message(chat_id):
     """Send a daily positive message to the user."""
 
     try:
-        if chat_id not in conversation_history:
-            if get_user_username(chat_id) == "chzcookie":
-                system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
-                message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
-            else:
-                system_content = "You are a helpful assistant. Keep responses concise."
-                message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
 
-            conversation_history[chat_id][:-6] = [
+        system_content = "You are a helpful assistant. Keep responses concise."
+        message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
+
+        if get_user_username(chat_id) == "chzcookie":
+            system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
+            message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
+
+        if chat_id not in conversation_history:
+            conversation_history[chat_id][:-10] = [
                 {'role': 'system', 'content': system_content}
             ]
 
