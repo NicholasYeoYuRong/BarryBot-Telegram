@@ -56,7 +56,7 @@ def restore_scheduled_jobs():
                 lambda: positive_message(chat_id),
                 'cron',
                 hour=10,
-                minute=2,
+                minute=6,
                 id=job_id
             )
 
@@ -73,7 +73,7 @@ def positive_message(chat_id):
             message_content = "Greet me based on the time of the day and give me different positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
 
         if chat_id not in conversation_history:
-            conversation_history[chat_id][:-10] = [
+            conversation_history[chat_id][:-6] = [
                 {'role': 'system', 'content': system_content}
             ]
 
