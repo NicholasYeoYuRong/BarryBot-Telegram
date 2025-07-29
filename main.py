@@ -39,6 +39,7 @@ BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
 
 scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Singapore"))
+scheduler.start()
 
 # Register a shutdown hook to stop the scheduler gracefully
 atexit.register(lambda: scheduler.shutdown())
@@ -744,7 +745,7 @@ def subscribe(message):
             lambda: positive_message(chat_id),  # Wrapped in lambda
             'cron',
             hour=9,
-            minute=55,
+            minute=58,
             id=job_id,
             replace_existing=True
         )
