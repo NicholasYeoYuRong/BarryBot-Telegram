@@ -39,7 +39,6 @@ BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
 
 scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Singapore"))
-scheduler.start()
 
 # Register a shutdown hook to stop the scheduler gracefully
 atexit.register(lambda: scheduler.shutdown())
@@ -63,7 +62,6 @@ def restore_scheduled_jobs():
 # Positive message job
 def positive_message(chat_id):
     """Send a daily positive message to the user."""
-
     try:
 
         system_content = "You are a helpful assistant. Keep responses concise."
@@ -745,8 +743,8 @@ def subscribe(message):
         scheduler.add_job(
             lambda: positive_message(chat_id),  # Wrapped in lambda
             'cron',
-            hour=8,
-            minute=0,
+            hour=9,
+            minute=55,
             id=job_id,
             replace_existing=True
         )
