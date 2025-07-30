@@ -34,6 +34,7 @@ agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
 agent_access_key = os.environ["agent_access_key"]
 
 ALLOWED_USERS = ["Nicholas_yowo", "chzcookie"]
+OWNER = "Nicholas_yowo"
 
 BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
@@ -58,6 +59,13 @@ def restore_scheduled_jobs():
                 minute=0,
                 id=job_id
             )
+
+def stop_all_positive_message_jobs():
+    """Stop all positive message jobs for all subscribed users."""
+    for chat_id in get_all_subscribed_chats():
+        job_id = f"positive_msg_{chat_id}"
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
 
 # Positive message job
 def positive_message(chat_id):
@@ -104,9 +112,13 @@ def positive_message(chat_id):
         delete_user(chat_id)
         scheduler.remove_job(f"positive_msg_{chat_id}")
 
-# Check if user is authorized
+################## Check if user is authorized ###################
 def is_allowed_user(message: types.Message) -> bool:
     return message.from_user.username in ALLOWED_USERS
+
+def is_owner(message: types.Message) -> bool:
+    return message.from_user.username == OWNER
+###################################################################
 
 def extract_datetime(event_text):
     return event_text.split(" | ")[-1]
@@ -178,6 +190,12 @@ def help_command(message):
 def reset_chat(message):
     conversation_history[message.chat.id] = []
     BOT.send_message(message.chat.id, "***CHAT RESETTED***")
+
+@BOT.message_handler(commands=['restartscheduler'], func=is_owner)
+def restart_scheduler(message):
+    stop_all_positive_message_jobs()
+    restore_scheduled_jobs()
+    BOT.send_message(message.chat.id, "***SCHEDULER RESTARTED***")
 
 @BOT.message_handler(commands=['upcomingschedule'])
 def list_calendar(message):
@@ -648,9 +666,11 @@ def deny_access_add(message):
 @BOT.message_handler(commands=['deleteschedule'])
 def deny_access_delete(message):
     BOT.reply_to(message, "Access denied: You are not authorized.")
+
+@BOT.message_handler(commands=['restartscheduler'])
+def deny_access_restart(message):
+    BOT.reply_to(message, "Access denied: You are not authorized.")
 ##################################################################################
-
-
 
 ## GENERATING AN IMAGE NEED ANOTHER IMAGE GENERATION MODEL ##
 ## USE HUGGING FACE DIFFUSERS ###
