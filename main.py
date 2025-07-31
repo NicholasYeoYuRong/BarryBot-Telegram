@@ -40,6 +40,7 @@ BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
 
 scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Singapore"))
+scheduler.start()
 
 # Register a shutdown hook to stop the scheduler gracefully
 atexit.register(lambda: scheduler.shutdown())
@@ -53,12 +54,14 @@ def restore_scheduled_jobs():
         job_id = f"positive_msg_{chat_id}"
         if not scheduler.get_job(job_id):
             scheduler.add_job(
-                lambda: positive_message(chat_id),
+                lambda chat_id=chat_id: positive_message(chat_id),
                 'cron',
                 hour=8,
                 minute=0,
                 id=job_id
             )
+
+restore_scheduled_jobs()
 
 def stop_all_positive_message_jobs():
     """Stop all positive message jobs for all subscribed users."""
@@ -72,6 +75,8 @@ def positive_message(chat_id):
     """Send a daily positive message to the user."""
     try:
 
+        conversation_history[chat_id] = conversation_history[chat_id][-6:]
+
         system_content = "You are a helpful assistant. Keep responses concise."
         message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
 
@@ -80,7 +85,7 @@ def positive_message(chat_id):
             message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
 
         if chat_id not in conversation_history:
-            conversation_history[chat_id][:-6] = [
+            conversation_history[chat_id] = [
                 {'role': 'system', 'content': system_content}
             ]
 
@@ -100,12 +105,6 @@ def positive_message(chat_id):
         conversation_history[chat_id].append(
             {'role': 'assistant', 'content': response_text}
         )
-        for i in range(0, len(response_text), 4000):
-            chunk = response_text[i:i+4000]
-            if i == 0:
-                BOT.send_message(chat_id, chunk)
-            else:
-                BOT.send_message(chat_id, chunk)
 
     except Exception as e:
         print(f"Failed to send to {chat_id}: {e}")
@@ -761,7 +760,7 @@ def subscribe(message):
     job_id = f"positive_msg_{chat_id}"
     if not scheduler.get_job(job_id):
         scheduler.add_job(
-            lambda: positive_message(chat_id),  # Wrapped in lambda
+            lambda chat_id=chat_id: positive_message(chat_id),  # Wrapped in lambda
             'cron',
             hour=8,
             minute=0,
@@ -807,13 +806,14 @@ def reply_func(message):
 
         # Get or initialize conversation history for this chat
         chat_id = message.chat.id
+        conversation_history[chat_id] = conversation_history[chat_id][-6:]
         if chat_id not in conversation_history:
             if message.from_user.username == "chzcookie":
-                conversation_history[chat_id][-6:] = [
+                conversation_history[chat_id] = [
                     {'role': 'system', 'content': "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."}
                 ]
             else:
-                conversation_history[chat_id][-6:] = [
+                conversation_history[chat_id] = [
                     {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise."}
                 ]
 
@@ -822,13 +822,22 @@ def reply_func(message):
             {'role': 'user', 'content': message.text}
         )
 
-        response = client.chat.completions.create(
-            model="n/a",
-            messages=conversation_history[chat_id]
-        )
+        full_response = ""
+        while True:
+            response = client.chat.completions.create(
+                model="n/a",
+                messages=conversation_history[chat_id],
+                max_tokens=4000, # Limit response length
+            )
+            chunk = response.choices[0].message.content.strip()
+            full_response += chunk
+
+            if response.choices[0].finish_reason != 'length':
+                break
 
         # Add assistant response to history
-        response_text = response.choices[0].message.content.strip()
+        response_text = full_response.strip()
+
         conversation_history[chat_id].append(
             {'role': 'assistant', 'content': response_text}
         )
@@ -839,8 +848,7 @@ def reply_func(message):
                 BOT.reply_to(message, chunk)
             else:
                 BOT.send_message(message.chat.id, chunk)
-    
-
+                
     except Exception as e:
         print(f"Error processing message: {e}")
         BOT.reply_to(message, "Sorry, I encountered an error processing your request.")
@@ -870,10 +878,6 @@ if __name__ == "__main__":
     # Start in a separate thread for better control
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
-
-    scheduler.start()
-
-    restore_scheduled_jobs()
 
     print("Starting bot online!")
     
