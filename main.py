@@ -40,6 +40,7 @@ BOT = telebot.TeleBot(token=API_TOKEN)
 time_picker = TimePicker()
 
 scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Singapore"))
+scheduler.start()
 
 # Register a shutdown hook to stop the scheduler gracefully
 atexit.register(lambda: scheduler.shutdown())
@@ -59,6 +60,8 @@ def restore_scheduled_jobs():
                 minute=0,
                 id=job_id
             )
+
+restore_scheduled_jobs()
 
 def stop_all_positive_message_jobs():
     """Stop all positive message jobs for all subscribed users."""
@@ -102,6 +105,8 @@ def positive_message(chat_id):
         conversation_history[chat_id].append(
             {'role': 'assistant', 'content': response_text}
         )
+
+        BOT.send_message(chat_id, response_text)
 
     except Exception as e:
         print(f"Failed to send to {chat_id}: {e}")
@@ -875,9 +880,6 @@ if __name__ == "__main__":
     # Start in a separate thread for better control
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
-
-    scheduler.start()
-    restore_scheduled_jobs()
 
     print("Starting bot online!")
     
