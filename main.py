@@ -816,7 +816,7 @@ def reply_func(message):
             #     ]
             # else:
             conversation_history[chat_id] = [
-                {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise. Use emojis when appropriate."}
+                {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise. Use emojis in responses whenever appropriate."}
             ]
 
         # Add user message to history
