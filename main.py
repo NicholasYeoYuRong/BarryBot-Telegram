@@ -78,11 +78,11 @@ def positive_message(chat_id):
         conversation_history[chat_id] = conversation_history[chat_id][-6:]
 
         system_content = "You are a helpful assistant. Keep responses concise."
-        message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Use emoji just for this response."
+        message_content = "Greet me based on the time of the day and give me a different positive message, quote, and affirmation for the day. Use emoji just for this response."
 
-        if get_user_username(chat_id) == "chzcookie":
-            system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
-            message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
+        # if get_user_username(chat_id) == "chzcookie":
+        #     system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
+        #     message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
 
         if chat_id not in conversation_history:
             conversation_history[chat_id] = [
@@ -810,14 +810,14 @@ def reply_func(message):
         chat_id = message.chat.id
         conversation_history[chat_id] = conversation_history[chat_id][-6:]
         if chat_id not in conversation_history:
-            if message.from_user.username == "chzcookie":
-                conversation_history[chat_id] = [
-                    {'role': 'system', 'content': "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."}
-                ]
-            else:
-                conversation_history[chat_id] = [
-                    {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise."}
-                ]
+            # if message.from_user.username == "chzcookie":
+            #     conversation_history[chat_id] = [
+            #         {'role': 'system', 'content': "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."}
+            #     ]
+            # else:
+            conversation_history[chat_id] = [
+                {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise. Use emojis in when appropriate."}
+            ]
 
         # Add user message to history
         conversation_history[chat_id].append(
