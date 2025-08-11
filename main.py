@@ -13,7 +13,7 @@ import time
 from openai import OpenAI
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from time_picker import TimePicker
-from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed
+from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
@@ -78,11 +78,11 @@ def positive_message(chat_id):
         conversation_history[chat_id] = conversation_history[chat_id][-6:]
 
         system_content = "You are a helpful assistant. Keep responses concise."
-        message_content = "Greet me based on the time of the day and give me a different positive message, quote, and affirmation for the day. Use emoji just for this response."
-
-        # if get_user_username(chat_id) == "chzcookie":
-        #     system_content = "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."
-        #     message_content = "Greet me based on the time of the day and give me a positive message, quote, or affirmation to take away for the day. Tell me how much Nicholas loves and adores me just for this response."
+        message_content = """Greet me based on the time of the day and give me a different positive message. Add a quote and affirmation from the bible as to what God wants to tell me today. Use emoji just for this response. Go by this format:
+        Good morning/afternoon/evening, [username]!\n\n
+        TODAY'S POSITIVE MESSAGE: [positive message]\n
+        WHAT GOD IS TELLING YOU TODAY: [quote] [Bible verse]\n
+        TODAY'S AFFIRMATION: [affirmation]"""
 
         if chat_id not in conversation_history:
             conversation_history[chat_id] = [
@@ -764,8 +764,8 @@ def subscribe(message):
         scheduler.add_job(
             lambda chat_id=chat_id: positive_message(chat_id),  # Wrapped in lambda
             'cron',
-            hour=8,
-            minute=0,
+            hour=17,
+            minute=43,
             id=job_id,
             replace_existing=True
         )
@@ -775,7 +775,7 @@ def subscribe(message):
         "You will receive daily positive messages at 8 am! 🌟\n"
         "You can unsubscribe at any time by sending /unsubscribe."
     )
-
+    
 
 ## UNSUBSCRIBE FROM DAILY POSITIVE MESSAGES ##
 @BOT.message_handler(commands=['unsubscribe'])
@@ -810,11 +810,6 @@ def reply_func(message):
         chat_id = message.chat.id
         conversation_history[chat_id] = conversation_history[chat_id][-6:]
         if chat_id not in conversation_history:
-            # if message.from_user.username == "chzcookie":
-            #     conversation_history[chat_id] = [
-            #         {'role': 'system', 'content': "The user is the owner's girlfriend, Chanel. The owner Nicholas loves and adores her. Give her positive affirmations and compliments. Keep responses concise and friendly and respectful. Use emojis in responses. Use more animal emojis. Keep her happy and be as witty as possible. Be understanding and supportive."}
-            #     ]
-            # else:
             conversation_history[chat_id] = [
                 {'role': 'system', 'content': "You are a helpful assistant. Keep responses concise. Use emojis in responses."}
             ]
