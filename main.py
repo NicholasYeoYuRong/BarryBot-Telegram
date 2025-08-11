@@ -764,8 +764,8 @@ def subscribe(message):
         scheduler.add_job(
             lambda chat_id=chat_id: positive_message(chat_id),  # Wrapped in lambda
             'cron',
-            hour=17,
-            minute=43,
+            hour=8,
+            minute=0,
             id=job_id,
             replace_existing=True
         )
