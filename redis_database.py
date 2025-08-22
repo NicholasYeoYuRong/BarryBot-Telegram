@@ -23,6 +23,13 @@ def save_user(chat_id, username):
     })
     r.sadd('subscribed_users', chat_id)
 
+def save_user_to_database(chat_id, username):
+    """Save user to the database."""
+    r.hset(f"chat_id:{chat_id}", mapping={
+        "username": username or "",
+        "last_active": str(int(time.time()))
+    })
+
 def delete_user(chat_id):
     """Delete user from the database."""
     r.hdel(f"chat_id:{chat_id}", 'subscribed')

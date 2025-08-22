@@ -13,7 +13,7 @@ import time
 from openai import OpenAI
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from time_picker import TimePicker
-from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id
+from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id, save_user_to_database
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
@@ -33,7 +33,7 @@ ICAL_URL = os.environ["ICAL_URL"]
 agent_endpoint = os.environ["agent_endpoint"] + "/api/v1/"
 agent_access_key = os.environ["agent_access_key"]
 
-ALLOWED_USERS = ["Nicholas_yowo", "chzcookie"]
+ALLOWED_USERS = ["Nicholas_yowo"]
 OWNER = "Nicholas_yowo"
 
 BOT = telebot.TeleBot(token=API_TOKEN)
@@ -78,8 +78,8 @@ def positive_message(chat_id):
         conversation_history[chat_id] = conversation_history[chat_id][-6:]
 
         system_content = "You are a helpful assistant. Keep responses concise."
-        message_content = """Greet me based on the time of the day and give me a different positive message. Add a quote and affirmation from the bible as to what God wants to tell me today. Use emoji just for this response. Go by this format:
-        Good morning/afternoon/evening, [username]!\n\n
+        message_content = f"""Greet me based on the time of the day and give me a different positive message. Add a quote and affirmation from the bible as to what God wants to tell me today. Use emoji just for this response. Go by this format:
+        Good morning [{get_user_username(chat_id) or 'friend'}]!\n\n
         TODAY'S POSITIVE MESSAGE: [positive message]\n
         WHAT GOD IS TELLING YOU TODAY: [quote] [Bible verse]\n
         TODAY'S AFFIRMATION: [affirmation]"""
@@ -162,11 +162,11 @@ def extract_event_time(event_text: str) -> str:
 def welcome(message):
     if message.from_user.username == "Nicholas_yowo":
         BOT.send_message(message.chat.id, f"Hello, Creator {message.from_user.username}! How can I assist you today?")
-    elif message.from_user.username == "chzcookie":
-        BOT.send_message(message.chat.id, f"Hello my Creator's Lovely Queen {message.from_user.first_name}! What do I owe this honour today?")
     else:
         welcome_text = f'Hi {message.from_user.first_name}, My name is Barry! How can I assist you today?'
         BOT.send_message(message.chat.id, welcome_text)
+    
+    save_user_to_database(message.chat.id, message.from_user.username)
     
     BOT.send_message(message.chat.id, "Type /help to see available commands.")
 
@@ -178,8 +178,8 @@ def help_command(message):
         "/help - Show this help message\n"
         "/subscribe - Subscribe to daily positive messages\n"
         "/unsubscribe - Unsubscribe from daily positive messages\n"
-        "/addschedule - Add an event to your calendar\n"
-        "/deleteschedule - Delete an event from your calendar\n"
+        "/addschedule - Add an event to your calendar (Only for authorized users)\n"
+        "/deleteschedule - Delete an event from your calendar (Only for authorized users)\n"
         "/upcomingschedule - List your upcoming schedules\n"
         "/allschedule - List all your schedules\n"
         "/reset - Reset the chat history\n"
