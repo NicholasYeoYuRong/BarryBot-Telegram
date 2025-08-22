@@ -57,3 +57,7 @@ def get_user_chat_id(username):
 def get_user_username(chat_id):
     """Get username by chat ID."""
     return r.hget(f"chat_id:{chat_id}", "username")
+
+def get_all_user_usernames():
+    """Get all usernames from the database."""
+    return [r.hget(key, "username") for key in r.keys("chat_id:*")]

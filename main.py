@@ -13,7 +13,7 @@ import time
 from openai import OpenAI
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from time_picker import TimePicker
-from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id, save_user_to_database
+from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id, save_user_to_database, get_all_user_usernames
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
@@ -185,7 +185,14 @@ def help_command(message):
         "/reset - Reset the chat history\n"
     )
     BOT.send_message(message.chat.id, help_text)
-        
+
+@BOT.message_handler(commands=['getalluser'])
+def getalluser(message):
+    usernames = get_all_user_usernames()
+    if usernames:
+        BOT.send_message(message.chat.id, "All users:\n" + "\n".join(usernames))
+    else:
+        BOT.send_message(message.chat.id, "No users found.")
 
 @BOT.message_handler(commands=['reset'])
 def reset_chat(message):
