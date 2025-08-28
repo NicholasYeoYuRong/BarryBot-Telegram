@@ -16,6 +16,9 @@ from time_picker import TimePicker
 from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id, save_user_to_database, get_all_user_usernames
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
+import googlemaps
+import math
+
 
 from ical_handler import (
     get_ical_events,
@@ -47,6 +50,110 @@ atexit.register(lambda: scheduler.shutdown())
 
 # STORING CONVO HISTORY
 conversation_history = defaultdict(list)
+
+# STORING USER LOCATION
+user_locations = {}
+
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else None
+
+def get_nearby_food_places(latitude, longitude, radius=1000, food_type=None):
+    """
+    Get nearby food places using Google Places API
+    """
+    if not gmaps:
+        return None, "Google Maps API not configured"
+    
+    try:
+        # Build the request
+        places_result = gmaps.places_nearby(
+            location=(latitude, longitude),
+            radius=radius,
+            type='restaurant',
+            keyword=food_type if food_type else None,
+            open_now=True  # Only show places currently open
+        )
+        
+        places = places_result.get('results', [])
+        
+        if not places:
+            return [], "No food places found nearby"
+        
+        # Sort by rating (highest first)
+        places.sort(key=lambda x: x.get('rating', 0), reverse=True)
+        
+        # Get detailed information for top 20 places
+        top_places = []
+        for place in places[:20]:
+            place_details = gmaps.place(place['place_id'])
+            detailed_info = place_details.get('result', {})
+            
+            top_places.append({
+                'name': place.get('name', 'Unknown'),
+                'rating': place.get('rating', 'No rating'),
+                'price_level': place.get('price_level', 'Unknown'),
+                'vicinity': place.get('vicinity', 'No address'),
+                'types': place.get('types', []),
+                'opening_hours': detailed_info.get('opening_hours', {}).get('weekday_text', ['Hours not available']),
+                'phone': detailed_info.get('formatted_phone_number', 'No phone'),
+                'website': detailed_info.get('website', 'No website'),
+                'location': place['geometry']['location'],
+                'place_id': place['place_id']
+            })
+        
+        return top_places, None
+        
+    except Exception as e:
+        return None, f"Error fetching places: {str(e)}"
+    
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """Calculate distance between two coordinates in meters"""
+    R = 6371000  # Earth radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = (math.sin(delta_phi/2) * math.sin(delta_phi/2) +
+         math.cos(phi1) * math.cos(phi2) *
+         math.sin(delta_lambda/2) * math.sin(delta_lambda/2))
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+    
+def format_place_message(place, user_lat, user_lon):
+    """Format a single place into a readable message"""
+    distance = calculate_distance(user_lat, user_lon, 
+                                place['location']['lat'], 
+                                place['location']['lng'])
+    
+    # Price level emoji mapping
+    price_emojis = {
+        0: '💰',  # Free
+        1: '💵',  # Inexpensive
+        2: '💵💵',  # Moderate
+        3: '💵💵💵',  # Expensive
+        4: '💵💵💵💵'  # Very Expensive
+    }
+    
+    price_display = price_emojis.get(place.get('price_level', 0), '💰')
+    
+    message = (
+        f"🍽️ **{place['name']}**\n"
+        f"⭐ Rating: {place['rating']}/5\n"
+        f"💰 Price: {price_display}\n"
+        f"📍 Distance: {distance:.0f}m away\n"
+        f"🏠 Address: {place['vicinity']}\n"
+    )
+    
+    if place.get('phone') != 'No phone':
+        message += f"📞 Phone: {place['phone']}\n"
+    
+    # Add Google Maps link
+    # maps_link = f"https://www.google.com/maps/place/?q=place_id:{place['place_id']}"
+    # message += f"🗺️ [View on Google Maps]({maps_link})"
+    
+    return message
 
 # Restore scheduled jobs
 def restore_scheduled_jobs():
@@ -170,6 +277,75 @@ def welcome(message):
     
     BOT.send_message(message.chat.id, "Type /help to see available commands.")
 
+@BOT.message_handler(commands=['setlocation'])
+def request_location(message):
+    """Ask user to share their location"""
+    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
+    location_btn = types.KeyboardButton("📍 Share Location", request_location=True)
+    markup.add(location_btn)
+    
+    BOT.send_message(
+        message.chat.id,
+        "Please share your location so I will be able to help your better:",
+        reply_markup=markup
+    )    
+
+@BOT.message_handler(content_types=['location'])
+def handle_location(message):
+    """Store User's location"""
+    chat_id = message.chat.id
+    location = message.location
+    user_locations[chat_id] = (location.latitude, location.longitude)
+
+    BOT.send_message(
+        chat_id,
+        f"📍 Location saved!\n",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+@BOT.message_handler(commands=['food', 'restaurant', 'eat'])
+def find_food_places(message):
+    """Find nearby food places"""
+    chat_id = message.chat.id
+
+    if chat_id not in user_locations:
+        BOT.send_message(
+            chat_id,
+            "📍 I need your location first! Please use /setlocation to share your location."
+        )
+        return
+        # request_location(message)
+
+    radius = 200
+    food_type = None
+
+    user_lat, user_lon = user_locations[chat_id]
+    
+    places, error = get_nearby_food_places(user_lat, user_lon, radius, food_type)
+    
+    if error:
+        BOT.send_message(chat_id, f"❌ {error}")
+        return
+    
+    if not places:
+        BOT.send_message(chat_id, "🍽️ No food places found nearby.")
+        return
+    
+    # Send ALL places
+    if len(places) > 0:
+        all_places = "\n\n".join([
+            format_place_message(place, user_lat, user_lon) 
+            for place in places[0:20]  # Show next 20 places
+        ])
+        
+        BOT.send_message(
+            chat_id,
+            f"🍽️ **ALL NEARBY OPTIONS**\n\n{all_places}",
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
+    
+
 @BOT.message_handler(commands=['help'])
 def help_command(message):
     help_text = (
@@ -183,6 +359,8 @@ def help_command(message):
         "/upcomingschedule - List your upcoming schedules\n"
         "/allschedule - List all your schedules\n"
         "/reset - Reset the chat history\n"
+        "/food - Find nearby food places\n"
+        "/setlocation - Set your location\n"
     )
     BOT.send_message(message.chat.id, help_text)
 
