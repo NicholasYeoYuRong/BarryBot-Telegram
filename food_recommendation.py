@@ -34,9 +34,9 @@ def get_nearby_food_places(latitude, longitude, radius=500, food_type=None):
         # Sort by rating (highest first)
         places.sort(key=lambda x: x.get('rating', 0), reverse=True)
         
-        # Get detailed information for top 15 places
+        # Get detailed information for top 18 places
         top_places = []
-        for place in places[:15]:
+        for place in places[:18]:
             place_details = gmaps.place(place['place_id'])
             detailed_info = place_details.get('result', {})
             

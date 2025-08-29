@@ -60,8 +60,8 @@ pending_food_requests = {}
 
 def cycle_food_options(chat_id, message_id, places):
     """Cycling with progress bar animation"""
-    places = places[:15]
-    total_cycles = random.randint(12, 15)
+    places = places[:18]
+    total_cycles = random.randint(12, 18)
     
     for cycle in range(total_cycles):
         place = random.choice(places)
@@ -105,7 +105,7 @@ def generate_food_places(chat_id):
         BOT.send_message(chat_id, "❌ Location not found.")
         return
 
-    radius = 500
+    radius = 400
     food_type = None
 
     user_lat, user_lon = user_locations[chat_id]
