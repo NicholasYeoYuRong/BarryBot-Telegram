@@ -36,7 +36,7 @@ def get_nearby_food_places(latitude, longitude, radius=200, food_type=None):
         
         # Get detailed information for top 20 places
         top_places = []
-        for place in places[:20]:
+        for place in places[:15]:
             place_details = gmaps.place(place['place_id'])
             detailed_info = place_details.get('result', {})
             
@@ -102,8 +102,8 @@ def format_place_message(place, user_lat, user_lon):
         message += f"📞 Phone: {place['phone']}\n"
     
     # Add Google Maps link
-    # maps_link = f"https://www.google.com/maps/place/?q=place_id:{place['place_id']}"
-    # message += f"🗺️ [View on Google Maps]({maps_link})"
+    maps_link = f"https://www.google.com/maps/search/?api=1&query={place['name']}&query_place_id={place['place_id']}"
+    message += f"🗺️ [View on Google Maps]({maps_link})"
     
     return message
 
@@ -128,3 +128,19 @@ def get_location_name(latitude, longitude):
     except Exception as e:
         print(f"Reverse geocoding error: {e}")
         return f"{latitude:.6f}, {longitude:.6f}"  # Fallback on error
+    
+def create_final_selection_message(place, user_lat, user_lon):
+    """Create detailed selection message"""
+    distance = calculate_distance(user_lat, user_lon, place['location']['lat'], place['location']['lng'])
+    
+    # Price level emojis
+    price_emojis = {0: '💰', 1: '💵', 2: '💵💵', 3: '💵💵💵', 4: '💵💵💵💵'}
+    price_display = price_emojis.get(place.get('price_level', 0), '💰')
+    
+    return f"🎊 **FINAL SELECTION!** 🎊\n\n" \
+           f"🍽️ **{place['name']}**\n" \
+           f"⭐ {place['rating']}/5 | {price_display}\n" \
+           f"📍 {distance:.0f}m away\n" \
+           f"🏠 {place['vicinity']}\n\n" \
+           f"_{place.get('description', 'No description available')}_\n\n" \
+           f"🗺️ [Open in Maps](https://www.google.com/maps/search/?api=1&query={place['name']}&query_place_id={place['place_id']})"

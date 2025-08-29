@@ -16,10 +16,9 @@ from time_picker import TimePicker
 from redis_database import save_user, delete_user, get_user_username, get_all_subscribed_chats, is_subscribed, get_user_chat_id, save_user_to_database, get_all_user_usernames
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
-import googlemaps
-import math
-from food_recommendation import get_nearby_food_places, format_place_message, get_location_name
+from food_recommendation import get_nearby_food_places, format_place_message, get_location_name, create_final_selection_message
 import random
+import threading
 
 
 from ical_handler import (
@@ -59,6 +58,47 @@ user_locations = {}
 # pending food requests
 pending_food_requests = {}
 
+def cycle_food_options(chat_id, message_id, places):
+    """Cycling with progress bar animation"""
+    places = places[:15]
+    total_cycles = random.randint(12, 15)
+    
+    for cycle in range(total_cycles):
+        place = random.choice(places)
+        
+        # Create progress bar
+        progress = int((cycle / total_cycles) * 10)
+        progress_bar = "[" + "█" * progress + "░" * (10 - progress) + "]"
+        
+        message = f"🎰 Searching for the perfect place...\n{progress_bar} {progress*10}%\n\n" \
+                 f"**Considering:** {place['name']} ⭐ {place['rating']}/5\n\n" \
+                 f"🔄 Cycle: {cycle}"
+
+        try:
+            BOT.edit_message_text(message, chat_id, message_id, parse_mode='Markdown')
+        except Exception as e:
+            if "message is not modified" in str(e):
+                # Skip this cycle if the message is the same
+                continue
+            else:
+                print(f"Error editing message: {e}")
+                break
+
+        # Dynamic timing - slower as we progress
+        if cycle < total_cycles * 0.6:
+            time.sleep(random.uniform(0.2, 0.3))
+        else:
+            time.sleep(random.uniform(0.5, 0.7))
+    
+    # Final selection
+    final_place = random.choice(places)
+    final_message = create_final_selection_message(final_place, user_locations[chat_id][0], user_locations[chat_id][1])
+
+    Markup = types.InlineKeyboardMarkup()
+    Markup.add(types.InlineKeyboardButton("🎲 Pick Again!", callback_data="random_pick"))
+
+    BOT.edit_message_text(final_message, chat_id, message_id, parse_mode='Markdown', reply_markup=Markup)
+
 def generate_food_places(chat_id):
     """Generate food places based on user location and preferences."""
     if chat_id not in user_locations:
@@ -86,7 +126,7 @@ def generate_food_places(chat_id):
     if len(places) > 0:
         all_places = "\n\n".join([
             format_place_message(place, user_lat, user_lon)
-            for place in places[0:20]  # Show next 20 places
+            for place in places[0:15]  # Show next 15 places
         ])
 
         BOT.send_message(
@@ -285,26 +325,21 @@ def handle_location(message):
 def random_pick(call):
     """ Help user pick a random food place"""
     chat_id = call.message.chat.id
+    message_id = call.message.message_id
+
+     # Acknowledge button press
+    BOT.answer_callback_query(call.id, "🎲 Initializing food wheel...")
+    
+    # Get food places first
     user_lat, user_lon = user_locations[chat_id]
     places, error = get_nearby_food_places(user_lat, user_lon)
-
-    food_places, error = get_nearby_food_places(user_lat, user_lon)
-
-    if error:
-        BOT.send_message(chat_id, f"❌ {error}")
+    
+    if error or not places:
+        BOT.edit_message_text("❌ No food places found nearby!", chat_id, message_id)
         return
-
-    if not places:
-        BOT.send_message(chat_id, "🍽️ No food places found nearby.")
-        return
-
-    # Pick a random place
-    selected_place = random.choice(food_places)
-    message = format_place_message(selected_place, user_lat, user_lon)
-    BOT.send_message(
-        chat_id,
-        f"PICK OF THE DAY:\n\n{message}"
-    )
+    
+    # Start the cycling effect in a separate thread
+    threading.Thread(target=cycle_food_options, args=(chat_id, message_id, places)).start()
 
 ########################################################################################################
 
