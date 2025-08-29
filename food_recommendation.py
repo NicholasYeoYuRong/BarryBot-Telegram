@@ -9,7 +9,7 @@ load_dotenv()
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else None
 
-def get_nearby_food_places(latitude, longitude, radius=200, food_type=None):
+def get_nearby_food_places(latitude, longitude, radius=500, food_type=None):
     """
     Get nearby food places using Google Places API
     """
@@ -34,7 +34,7 @@ def get_nearby_food_places(latitude, longitude, radius=200, food_type=None):
         # Sort by rating (highest first)
         places.sort(key=lambda x: x.get('rating', 0), reverse=True)
         
-        # Get detailed information for top 20 places
+        # Get detailed information for top 15 places
         top_places = []
         for place in places[:15]:
             place_details = gmaps.place(place['place_id'])

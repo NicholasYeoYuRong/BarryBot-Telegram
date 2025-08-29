@@ -105,7 +105,7 @@ def generate_food_places(chat_id):
         BOT.send_message(chat_id, "❌ Location not found.")
         return
 
-    radius = 200
+    radius = 500
     food_type = None
 
     user_lat, user_lon = user_locations[chat_id]
@@ -287,7 +287,7 @@ def find_food_places(message):
 
     pending_food_requests[chat_id] = {
         'message': message,
-        'radius': 1000,  # Default radius
+        'radius': 500,  # Default radius
         'food_type': None
     }
 
