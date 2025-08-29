@@ -18,6 +18,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 import googlemaps
 import math
+from food_recommendation import get_nearby_food_places, format_place_message, get_location_name
+import random
 
 
 from ical_handler import (
@@ -54,106 +56,46 @@ conversation_history = defaultdict(list)
 # STORING USER LOCATION
 user_locations = {}
 
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else None
+# pending food requests
+pending_food_requests = {}
 
-def get_nearby_food_places(latitude, longitude, radius=1000, food_type=None):
-    """
-    Get nearby food places using Google Places API
-    """
-    if not gmaps:
-        return None, "Google Maps API not configured"
-    
-    try:
-        # Build the request
-        places_result = gmaps.places_nearby(
-            location=(latitude, longitude),
-            radius=radius,
-            type='restaurant',
-            keyword=food_type if food_type else None,
-            open_now=True  # Only show places currently open
+def generate_food_places(chat_id):
+    """Generate food places based on user location and preferences."""
+    if chat_id not in user_locations:
+        BOT.send_message(chat_id, "❌ Location not found.")
+        return
+
+    radius = 200
+    food_type = None
+
+    user_lat, user_lon = user_locations[chat_id]
+    places, error = get_nearby_food_places(user_lat, user_lon, radius, food_type)
+
+    if error:
+        BOT.send_message(chat_id, f"❌ {error}")
+        return
+
+    if not places:
+        BOT.send_message(chat_id, "🍽️ No food places found nearby.")
+        return
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🎲 I CAN'T DECIDE!", callback_data="random_pick"))
+
+    # Send ALL places
+    if len(places) > 0:
+        all_places = "\n\n".join([
+            format_place_message(place, user_lat, user_lon)
+            for place in places[0:20]  # Show next 20 places
+        ])
+
+        BOT.send_message(
+            chat_id,
+            f"🍽️ **ALL NEARBY OPTIONS**\n\n{all_places}",
+            parse_mode='Markdown',
+            disable_web_page_preview=True,
+            reply_markup=markup
         )
-        
-        places = places_result.get('results', [])
-        
-        if not places:
-            return [], "No food places found nearby"
-        
-        # Sort by rating (highest first)
-        places.sort(key=lambda x: x.get('rating', 0), reverse=True)
-        
-        # Get detailed information for top 20 places
-        top_places = []
-        for place in places[:20]:
-            place_details = gmaps.place(place['place_id'])
-            detailed_info = place_details.get('result', {})
-            
-            top_places.append({
-                'name': place.get('name', 'Unknown'),
-                'rating': place.get('rating', 'No rating'),
-                'price_level': place.get('price_level', 'Unknown'),
-                'vicinity': place.get('vicinity', 'No address'),
-                'types': place.get('types', []),
-                'opening_hours': detailed_info.get('opening_hours', {}).get('weekday_text', ['Hours not available']),
-                'phone': detailed_info.get('formatted_phone_number', 'No phone'),
-                'website': detailed_info.get('website', 'No website'),
-                'location': place['geometry']['location'],
-                'place_id': place['place_id']
-            })
-        
-        return top_places, None
-        
-    except Exception as e:
-        return None, f"Error fetching places: {str(e)}"
-    
-def calculate_distance(lat1, lon1, lat2, lon2):
-    """Calculate distance between two coordinates in meters"""
-    R = 6371000  # Earth radius in meters
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-    
-    a = (math.sin(delta_phi/2) * math.sin(delta_phi/2) +
-         math.cos(phi1) * math.cos(phi2) *
-         math.sin(delta_lambda/2) * math.sin(delta_lambda/2))
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    
-    return R * c
-    
-def format_place_message(place, user_lat, user_lon):
-    """Format a single place into a readable message"""
-    distance = calculate_distance(user_lat, user_lon, 
-                                place['location']['lat'], 
-                                place['location']['lng'])
-    
-    # Price level emoji mapping
-    price_emojis = {
-        0: '💰',  # Free
-        1: '💵',  # Inexpensive
-        2: '💵💵',  # Moderate
-        3: '💵💵💵',  # Expensive
-        4: '💵💵💵💵'  # Very Expensive
-    }
-    
-    price_display = price_emojis.get(place.get('price_level', 0), '💰')
-    
-    message = (
-        f"🍽️ **{place['name']}**\n"
-        f"⭐ Rating: {place['rating']}/5\n"
-        f"💰 Price: {price_display}\n"
-        f"📍 Distance: {distance:.0f}m away\n"
-        f"🏠 Address: {place['vicinity']}\n"
-    )
-    
-    if place.get('phone') != 'No phone':
-        message += f"📞 Phone: {place['phone']}\n"
-    
-    # Add Google Maps link
-    # maps_link = f"https://www.google.com/maps/place/?q=place_id:{place['place_id']}"
-    # message += f"🗺️ [View on Google Maps]({maps_link})"
-    
-    return message
 
 # Restore scheduled jobs
 def restore_scheduled_jobs():
@@ -177,7 +119,7 @@ def stop_all_positive_message_jobs():
         if scheduler.get_job(job_id):
             scheduler.remove_job(job_id)
 
-# Positive message job
+##################################### POSITIVE MESSAGE JOB ###############################################
 def positive_message(chat_id):
     """Send a daily positive message to the user."""
     try:
@@ -219,14 +161,15 @@ def positive_message(chat_id):
         print(f"Failed to send to {chat_id}: {e}")
         delete_user(chat_id)
         scheduler.remove_job(f"positive_msg_{chat_id}")
+############################################################################################################
 
-################## Check if user is authorized ###################
+#################################### Check if user is authorized ###########################################
 def is_allowed_user(message: types.Message) -> bool:
     return message.from_user.username in ALLOWED_USERS
 
 def is_owner(message: types.Message) -> bool:
     return message.from_user.username == OWNER
-###################################################################
+#############################################################################################################
 
 def extract_datetime(event_text):
     return event_text.split(" | ")[-1]
@@ -264,7 +207,7 @@ def extract_event_name(event_text: str) -> str:
 def extract_event_time(event_text: str) -> str:
     return event_text.split(" | ")[-1] ## CHANGE TO " | "
 
-# /start #
+################################################################### /start ######################################################################
 @BOT.message_handler(commands=['start'])
 def welcome(message):
     if message.from_user.username == "Nicholas_yowo":
@@ -276,75 +219,8 @@ def welcome(message):
     save_user_to_database(message.chat.id, message.from_user.username)
     
     BOT.send_message(message.chat.id, "Type /help to see available commands.")
+###################################################################################################################################################
 
-@BOT.message_handler(commands=['setlocation'])
-def request_location(message):
-    """Ask user to share their location"""
-    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-    location_btn = types.KeyboardButton("📍 Share Location", request_location=True)
-    markup.add(location_btn)
-    
-    BOT.send_message(
-        message.chat.id,
-        "Please share your location so I will be able to help your better:",
-        reply_markup=markup
-    )    
-
-@BOT.message_handler(content_types=['location'])
-def handle_location(message):
-    """Store User's location"""
-    chat_id = message.chat.id
-    location = message.location
-    user_locations[chat_id] = (location.latitude, location.longitude)
-
-    BOT.send_message(
-        chat_id,
-        f"📍 Location saved!\n",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-@BOT.message_handler(commands=['food', 'restaurant', 'eat'])
-def find_food_places(message):
-    """Find nearby food places"""
-    chat_id = message.chat.id
-
-    if chat_id not in user_locations:
-        BOT.send_message(
-            chat_id,
-            "📍 I need your location first! Please use /setlocation to share your location."
-        )
-        return
-        # request_location(message)
-
-    radius = 200
-    food_type = None
-
-    user_lat, user_lon = user_locations[chat_id]
-    
-    places, error = get_nearby_food_places(user_lat, user_lon, radius, food_type)
-    
-    if error:
-        BOT.send_message(chat_id, f"❌ {error}")
-        return
-    
-    if not places:
-        BOT.send_message(chat_id, "🍽️ No food places found nearby.")
-        return
-    
-    # Send ALL places
-    if len(places) > 0:
-        all_places = "\n\n".join([
-            format_place_message(place, user_lat, user_lon) 
-            for place in places[0:20]  # Show next 20 places
-        ])
-        
-        BOT.send_message(
-            chat_id,
-            f"🍽️ **ALL NEARBY OPTIONS**\n\n{all_places}",
-            parse_mode='Markdown',
-            disable_web_page_preview=True
-        )
-    
 
 @BOT.message_handler(commands=['help'])
 def help_command(message):
@@ -359,11 +235,80 @@ def help_command(message):
         "/upcomingschedule - List your upcoming schedules\n"
         "/allschedule - List all your schedules\n"
         "/reset - Reset the chat history\n"
-        "/food - Find nearby food places\n"
-        "/setlocation - Set your location\n"
+        "/foodrecommendations - Find nearby food places\n"
     )
     BOT.send_message(message.chat.id, help_text)
 
+######################################### FOOD RECOMMENDATIONS #########################################
+@BOT.message_handler(commands=['foodrecommendations'])
+def find_food_places(message):
+    """Find nearby food places"""
+    chat_id = message.chat.id
+
+    pending_food_requests[chat_id] = {
+        'message': message,
+        'radius': 1000,  # Default radius
+        'food_type': None
+    }
+
+    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
+    location_btn = types.KeyboardButton("📍Share Location", request_location=True)
+    markup.add(location_btn)
+    
+    BOT.send_message(
+        chat_id,
+        "📍 Please share your location so that I can help you better:",
+        reply_markup=markup
+    )   
+
+@BOT.message_handler(content_types=['location'])
+def handle_location(message):
+    """Store User's location and process requests"""
+    chat_id = message.chat.id
+    location = message.location
+    user_locations[chat_id] = (location.latitude, location.longitude)
+
+    # Get location name
+    location_name = get_location_name(location.latitude, location.longitude)
+
+    BOT.send_message(
+        chat_id,
+        f"📍Location received!\n" 
+        f"📌 You're at: {location_name}\n\n"
+        f"Generating recommendations...",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+    generate_food_places(chat_id)
+
+@BOT.callback_query_handler(func=lambda call: call.data == "random_pick")
+def random_pick(call):
+    """ Help user pick a random food place"""
+    chat_id = call.message.chat.id
+    user_lat, user_lon = user_locations[chat_id]
+    places, error = get_nearby_food_places(user_lat, user_lon)
+
+    food_places, error = get_nearby_food_places(user_lat, user_lon)
+
+    if error:
+        BOT.send_message(chat_id, f"❌ {error}")
+        return
+
+    if not places:
+        BOT.send_message(chat_id, "🍽️ No food places found nearby.")
+        return
+
+    # Pick a random place
+    selected_place = random.choice(food_places)
+    message = format_place_message(selected_place, user_lat, user_lon)
+    BOT.send_message(
+        chat_id,
+        f"PICK OF THE DAY:\n\n{message}"
+    )
+
+########################################################################################################
+
+################################ GET ALL USER FROM DATABASE #############################
 @BOT.message_handler(commands=['getalluser'])
 def getalluser(message):
     usernames = get_all_user_usernames()
@@ -371,6 +316,7 @@ def getalluser(message):
         BOT.send_message(message.chat.id, "All users:\n" + "\n".join(usernames))
     else:
         BOT.send_message(message.chat.id, "No users found.")
+#########################################################################################
 
 @BOT.message_handler(commands=['reset'])
 def reset_chat(message):
@@ -383,6 +329,7 @@ def restart_scheduler(message):
     restore_scheduled_jobs()
     BOT.send_message(message.chat.id, "***SCHEDULER RESTARTED***")
 
+######################################## SCHEDULES #######################################################
 @BOT.message_handler(commands=['upcomingschedule'])
 def list_calendar(message):
     try:
@@ -843,6 +790,7 @@ def cancel_add_event(call):
         message_id=call.message.message_id,
         text="Event creation cancelled. You can start over with /addschedule"
     )
+############################################################################################################
 
 ########################## Authorisation denied ##################################
 @BOT.message_handler(commands=['addschedule'])
