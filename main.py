@@ -69,82 +69,82 @@ def is_owner(message: types.Message) -> bool:
     return message.from_user.username == OWNER
 #############################################################################################################
 
-def broadcast_announcement(admin_chat_id, progress_message_id):
-    """Broadcast announcement to all users"""
-    announcement = announcement_data[admin_chat_id]
-    message_text = announcement['message_text']
-    all_users = get_all_chat_ids()
-    total_users = len(all_users)
+# def broadcast_announcement(admin_chat_id, progress_message_id):
+#     """Broadcast announcement to all users"""
+#     announcement = announcement_data[admin_chat_id]
+#     message_text = announcement['message_text']
+#     all_users = get_all_chat_ids()
+#     total_users = len(all_users)
     
-    sent_count = 0
-    failed_count = 0
-    failed_users = []
+#     sent_count = 0
+#     failed_count = 0
+#     failed_users = []
     
-    for i, user_chat_id in enumerate(all_users):
-        try:
-            # Send the announcement
-            BOT.send_message(user_chat_id, message_text)
-            sent_count += 1
+#     for i, user_chat_id in enumerate(all_users):
+#         try:
+#             # Send the announcement
+#             BOT.send_message(user_chat_id, message_text)
+#             sent_count += 1
             
-            # Add small delay to avoid rate limiting
-            time.sleep(0.1)
+#             # Add small delay to avoid rate limiting
+#             time.sleep(0.1)
             
-        except Exception as e:
-            print(f"Failed to send to {user_chat_id}: {e}")
-            failed_count += 1
-            failed_users.append(get_user_username(user_chat_id) or user_chat_id)
+#         except Exception as e:
+#             print(f"Failed to send to {user_chat_id}: {e}")
+#             failed_count += 1
+#             failed_users.append(get_user_username(user_chat_id) or user_chat_id)
             
-            # Remove failed users from database
-            # try:
-            #     delete_user(user_chat_id)
-            # except:
-            #     pass
+#             # Remove failed users from database
+#             # try:
+#             #     delete_user(user_chat_id)
+#             # except:
+#             #     pass
         
-        # Update progress every 10 messages or for last message
-        if (i + 1) % 10 == 0 or (i + 1) == total_users:
-            progress = int((i + 1) / total_users * 100)
+#         # Update progress every 10 messages or for last message
+#         if (i + 1) % 10 == 0 or (i + 1) == total_users:
+#             progress = int((i + 1) / total_users * 100)
             
-            try:
-                BOT.edit_message_text(
-                    f"📢 Sending announcements...\n\n"
-                    f"Progress: {progress}%\n"
-                    f"Sent: {sent_count} | Failed: {failed_count}\n"
-                    f"Remaining: {total_users - i - 1}",
-                    chat_id=admin_chat_id,
-                    message_id=progress_message_id
-                )
-            except:
-                pass  # Ignore edit errors
+#             try:
+#                 BOT.edit_message_text(
+#                     f"📢 Sending announcements...\n\n"
+#                     f"Progress: {progress}%\n"
+#                     f"Sent: {sent_count} | Failed: {failed_count}\n"
+#                     f"Remaining: {total_users - i - 1}",
+#                     chat_id=admin_chat_id,
+#                     message_id=progress_message_id
+#                 )
+#             except:
+#                 pass  # Ignore edit errors
     
-    # Final update
-    try:
-        BOT.edit_message_text(
-            f"✅ Announcement Complete!\n\n"
-            f"Total users: {total_users}\n"
-            f"✅ Success: {sent_count}\n"
-            f"❌ Failed: {failed_count}\n"
-            f"📊 Success rate: {(sent_count/total_users*100):.1f}%",
-            chat_id=admin_chat_id,
-            message_id=progress_message_id
-        )
+#     # Final update
+#     try:
+#         BOT.edit_message_text(
+#             f"✅ Announcement Complete!\n\n"
+#             f"Total users: {total_users}\n"
+#             f"✅ Success: {sent_count}\n"
+#             f"❌ Failed: {failed_count}\n"
+#             f"📊 Success rate: {(sent_count/total_users*100):.1f}%",
+#             chat_id=admin_chat_id,
+#             message_id=progress_message_id
+#         )
         
-        # Send failed users list if any
-        if failed_users:
-            failed_list = "\n".join([str(uid) for uid in failed_users[:10]])  # First 10 only
-            if len(failed_users) > 10:
-                failed_list += f"\n...and {len(failed_users) - 10} more"
+#         # Send failed users list if any
+#         if failed_users:
+#             failed_list = "\n".join([str(uid) for uid in failed_users[:10]])  # First 10 only
+#             if len(failed_users) > 10:
+#                 failed_list += f"\n...and {len(failed_users) - 10} more"
             
-            BOT.send_message(
-                admin_chat_id,
-                f"❌ Failed to send to these users:\n{failed_list}"
-            )
+#             BOT.send_message(
+#                 admin_chat_id,
+#                 f"❌ Failed to send to these users:\n{failed_list}"
+#             )
             
-    except Exception as e:
-        print(f"Error updating final stats: {e}")
+#     except Exception as e:
+#         print(f"Error updating final stats: {e}")
     
-    # Clean up
-    user_states.pop(admin_chat_id, None)
-    announcement_data.pop(admin_chat_id, None)
+#     # Clean up
+#     user_states.pop(admin_chat_id, None)
+#     announcement_data.pop(admin_chat_id, None)
 
 def cycle_food_options(chat_id, message_id, places):
     """Cycling with progress bar animation"""
@@ -342,96 +342,96 @@ def welcome(message):
 ###################################################################################################################################################
 
 ########################################################### ANNOUNCEMENT FUNCTIONS ################################################################
-@BOT.message_handler(commands=['announcement'], func=OWNER)
-def announce_command(message):
-    """Start announcement process"""
-    chat_id = message.chat.id
+# @BOT.message_handler(commands=['announcement'], func=OWNER)
+# def announce_command(message):
+#     """Start announcement process"""
+#     chat_id = message.chat.id
 
-    all_chat_id = get_all_chat_ids()
-    total_users = len(all_chat_id)
+#     all_chat_id = get_all_chat_ids()
+#     total_users = len(all_chat_id)
 
-    if total_users == 0:
-        BOT.send_message(chat_id, "❌ No users found in the database.")
-        return
+#     if total_users == 0:
+#         BOT.send_message(chat_id, "❌ No users found in the database.")
+#         return
     
-    # Store announcement state
-    user_states[chat_id] = 'awaiting_announcement'
-    announcement_data[chat_id] = {
-        'total_users': total_users,
-        'users_sent': 0,
-        'users_failed': 0,
-        'message_text': None
-    }
+#     # Store announcement state
+#     user_states[chat_id] = 'awaiting_announcement'
+#     announcement_data[chat_id] = {
+#         'total_users': total_users,
+#         'users_sent': 0,
+#         'users_failed': 0,
+#         'message_text': None
+#     }
 
-    BOT.send_message(
-        chat_id,
-        f"📢 Announcement Mode\n\n"
-        f"Total users: {total_users}\n\n"
-        "Please send the announcement message you want to broadcast:"
-    )
+#     BOT.send_message(
+#         chat_id,
+#         f"📢 Announcement Mode\n\n"
+#         f"Total users: {total_users}\n\n"
+#         "Please send the announcement message you want to broadcast:"
+#     )
 
-@BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_announcement')
-def handle_announcement_message(message):
-    """Process the announcement message and start broadcasting"""
-    chat_id = message.chat.id
-    announcement_text = message.text
+# @BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_announcement')
+# def handle_announcement_message(message):
+#     """Process the announcement message and start broadcasting"""
+#     chat_id = message.chat.id
+#     announcement_text = message.text
     
-    if not announcement_text.strip():
-        BOT.send_message(chat_id, "❌ Announcement message cannot be empty.")
-        user_states.pop(chat_id, None)
-        announcement_data.pop(chat_id, None)
-        return
+#     if not announcement_text.strip():
+#         BOT.send_message(chat_id, "❌ Announcement message cannot be empty.")
+#         user_states.pop(chat_id, None)
+#         announcement_data.pop(chat_id, None)
+#         return
     
-    # Store announcement text
-    announcement_data[chat_id]['message_text'] = announcement_text
+#     # Store announcement text
+#     announcement_data[chat_id]['message_text'] = announcement_text
     
-    # Confirm before sending
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("✅ Yes, Send to All", callback_data="confirm_announce"),
-        types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_announce")
-    )
+#     # Confirm before sending
+#     markup = types.InlineKeyboardMarkup()
+#     markup.add(
+#         types.InlineKeyboardButton("✅ Yes, Send to All", callback_data="confirm_announce"),
+#         types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_announce")
+#     )
     
-    total_users = announcement_data[chat_id]['total_users']
+#     total_users = announcement_data[chat_id]['total_users']
     
-    BOT.send_message(
-        chat_id,
-        f"📢 Confirm Announcement\n\n"
-        f"Message: {announcement_text}\n\n"
-        f"Recipients: {total_users} users\n\n"
-        "Are you sure you want to send this announcement?",
-        reply_markup=markup
-    )
+#     BOT.send_message(
+#         chat_id,
+#         f"📢 Confirm Announcement\n\n"
+#         f"Message: {announcement_text}\n\n"
+#         f"Recipients: {total_users} users\n\n"
+#         "Are you sure you want to send this announcement?",
+#         reply_markup=markup
+#     )
 
-@BOT.callback_query_handler(func=lambda call: call.data in ["confirm_announce", "cancel_announce"])
-def handle_announcement_confirmation(call):
-    """Handle announcement confirmation"""
-    chat_id = call.message.chat.id
+# @BOT.callback_query_handler(func=lambda call: call.data in ["confirm_announce", "cancel_announce"])
+# def handle_announcement_confirmation(call):
+#     """Handle announcement confirmation"""
+#     chat_id = call.message.chat.id
     
-    if call.data == "cancel_announce":
-        BOT.edit_message_text(
-            "❌ Announcement cancelled.",
-            chat_id=chat_id,
-            message_id=call.message.message_id
-        )
-        user_states.pop(chat_id, None)
-        announcement_data.pop(chat_id, None)
-        return
+#     if call.data == "cancel_announce":
+#         BOT.edit_message_text(
+#             "❌ Announcement cancelled.",
+#             chat_id=chat_id,
+#             message_id=call.message.message_id
+#         )
+#         user_states.pop(chat_id, None)
+#         announcement_data.pop(chat_id, None)
+#         return
     
-    # Start broadcasting
-    BOT.edit_message_text(
-        "📢 Sending announcements...\n\n"
-        "Progress: 0%\n"
-        "Sent: 0 | Failed: 0",
-        chat_id=chat_id,
-        message_id=call.message.message_id
-    )
+#     # Start broadcasting
+#     BOT.edit_message_text(
+#         "📢 Sending announcements...\n\n"
+#         "Progress: 0%\n"
+#         "Sent: 0 | Failed: 0",
+#         chat_id=chat_id,
+#         message_id=call.message.message_id
+#     )
     
-    # Start broadcasting in a separate thread
-    threading.Thread(
-        target=broadcast_announcement,
-        args=(chat_id, call.message.message_id)
-    ).start()
+#     # Start broadcasting in a separate thread
+#     threading.Thread(
+#         target=broadcast_announcement,
+#         args=(chat_id, call.message.message_id)
+#     ).start()
 
 #################################################################################################################################################
 
