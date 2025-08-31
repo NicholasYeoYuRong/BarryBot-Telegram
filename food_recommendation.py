@@ -9,7 +9,7 @@ load_dotenv()
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else None
 
-def get_nearby_food_places(latitude, longitude, radius=500, food_type=None):
+def get_nearby_food_places(latitude, longitude, radius=400, food_type=None):
     """
     Get nearby food places using Google Places API
     """
@@ -34,9 +34,9 @@ def get_nearby_food_places(latitude, longitude, radius=500, food_type=None):
         # Sort by rating (highest first)
         places.sort(key=lambda x: x.get('rating', 0), reverse=True)
         
-        # Get detailed information for top 18 places
+        # Get detailed information for top 15 places
         top_places = []
-        for place in places[:18]:
+        for place in places[:15]:
             place_details = gmaps.place(place['place_id'])
             detailed_info = place_details.get('result', {})
             
@@ -91,19 +91,19 @@ def format_place_message(place, user_lat, user_lon):
     price_display = price_emojis.get(place.get('price_level', 0), '💰')
     
     message = (
-        f"🍽️ **{place['name']}**\n"
-        f"⭐ Rating: {place['rating']}/5\n"
+        f"🍽️ <b>{place.get('name', 'Unknown')}</b>\n"
+        f"⭐ Rating: {place.get('rating', '?')}/5\n"
         f"💰 Price: {price_display}\n"
         f"📍 Distance: {distance:.0f}m away\n"
-        f"🏠 Address: {place['vicinity']}\n"
+        f"🏠 Address: {place.get('vicinity', 'No address')}\n"
     )
     
     if place.get('phone') != 'No phone':
-        message += f"📞 Phone: {place['phone']}\n"
-    
+        message += f"📞 Phone: {place.get('phone', 'No phone')}\n"
+
     # Add Google Maps link
-    maps_link = f"https://www.google.com/maps/search/?api=1&query={place['name']}&query_place_id={place['place_id']}"
-    message += f"🗺️ [View on Google Maps]({maps_link})"
+    maps_link = f"https://www.google.com/maps/search/?api=1&query={place.get('name', 'Unknown')}&query_place_id={place.get('place_id', '')}"
+    message += f'🗺️ <a href="{maps_link}">View on Google Maps</a>'
     
     return message
 
@@ -136,11 +136,11 @@ def create_final_selection_message(place, user_lat, user_lon):
     # Price level emojis
     price_emojis = {0: '💰', 1: '💵', 2: '💵💵', 3: '💵💵💵', 4: '💵💵💵💵'}
     price_display = price_emojis.get(place.get('price_level', 0), '💰')
-    
-    return f"🎊 **FINAL SELECTION!** 🎊\n\n" \
-           f"🍽️ **{place['name']}**\n" \
+
+    return f"🎊 <b>FINAL SELECTION!</b> 🎊\n\n" \
+           f"🍽️ <b>{place['name']}</b>\n" \
            f"⭐ {place['rating']}/5 | {price_display}\n" \
            f"📍 {distance:.0f}m away\n" \
-           f"🏠 {place['vicinity']}\n\n" \
+           f"🏠 {place.get('vicinity', 'No address')}\n\n" \
            f"_{place.get('description', 'No description available')}_\n\n" \
-           f"🗺️ [Open in Maps](https://www.google.com/maps/search/?api=1&query={place['name']}&query_place_id={place['place_id']})"
+           f"🗺️ <a href=\"https://www.google.com/maps/search/?api=1&query={place.get('name', 'Unknown')}&query_place_id={place.get('place_id', '')}\">Open in Maps</a>"

@@ -69,83 +69,6 @@ def is_owner(message: types.Message) -> bool:
     return message.from_user.username == OWNER
 #############################################################################################################
 
-# def broadcast_announcement(admin_chat_id, progress_message_id):
-#     """Broadcast announcement to all users"""
-#     announcement = announcement_data[admin_chat_id]
-#     message_text = announcement['message_text']
-#     all_users = get_all_chat_ids()
-#     total_users = len(all_users)
-    
-#     sent_count = 0
-#     failed_count = 0
-#     failed_users = []
-    
-#     for i, user_chat_id in enumerate(all_users):
-#         try:
-#             # Send the announcement
-#             BOT.send_message(user_chat_id, message_text)
-#             sent_count += 1
-            
-#             # Add small delay to avoid rate limiting
-#             time.sleep(0.1)
-            
-#         except Exception as e:
-#             print(f"Failed to send to {user_chat_id}: {e}")
-#             failed_count += 1
-#             failed_users.append(get_user_username(user_chat_id) or user_chat_id)
-            
-#             # Remove failed users from database
-#             # try:
-#             #     delete_user(user_chat_id)
-#             # except:
-#             #     pass
-        
-#         # Update progress every 10 messages or for last message
-#         if (i + 1) % 10 == 0 or (i + 1) == total_users:
-#             progress = int((i + 1) / total_users * 100)
-            
-#             try:
-#                 BOT.edit_message_text(
-#                     f"📢 Sending announcements...\n\n"
-#                     f"Progress: {progress}%\n"
-#                     f"Sent: {sent_count} | Failed: {failed_count}\n"
-#                     f"Remaining: {total_users - i - 1}",
-#                     chat_id=admin_chat_id,
-#                     message_id=progress_message_id
-#                 )
-#             except:
-#                 pass  # Ignore edit errors
-    
-#     # Final update
-#     try:
-#         BOT.edit_message_text(
-#             f"✅ Announcement Complete!\n\n"
-#             f"Total users: {total_users}\n"
-#             f"✅ Success: {sent_count}\n"
-#             f"❌ Failed: {failed_count}\n"
-#             f"📊 Success rate: {(sent_count/total_users*100):.1f}%",
-#             chat_id=admin_chat_id,
-#             message_id=progress_message_id
-#         )
-        
-#         # Send failed users list if any
-#         if failed_users:
-#             failed_list = "\n".join([str(uid) for uid in failed_users[:10]])  # First 10 only
-#             if len(failed_users) > 10:
-#                 failed_list += f"\n...and {len(failed_users) - 10} more"
-            
-#             BOT.send_message(
-#                 admin_chat_id,
-#                 f"❌ Failed to send to these users:\n{failed_list}"
-#             )
-            
-#     except Exception as e:
-#         print(f"Error updating final stats: {e}")
-    
-#     # Clean up
-#     user_states.pop(admin_chat_id, None)
-#     announcement_data.pop(admin_chat_id, None)
-
 def cycle_food_options(chat_id, message_id, places):
     """Cycling with progress bar animation"""
     places = places[:18]
@@ -185,16 +108,16 @@ def cycle_food_options(chat_id, message_id, places):
     Markup = types.InlineKeyboardMarkup()
     Markup.add(types.InlineKeyboardButton("🎲 Pick Again!", callback_data="random_pick"))
 
-    BOT.edit_message_text(final_message, chat_id, message_id, parse_mode='Markdown', reply_markup=Markup)
+    BOT.edit_message_text(final_message, chat_id, message_id, parse_mode='HTML', reply_markup=Markup)
 
-def generate_food_places(chat_id):
+def generate_food_places(chat_id, radius):
     """Generate food places based on user location and preferences."""
     if chat_id not in user_locations:
         BOT.send_message(chat_id, "❌ Location not found.")
         return
-
-    radius = 400
-    food_type = None
+    
+    radius = radius
+    food_type = None  # Default food type
 
     user_lat, user_lon = user_locations[chat_id]
     places, error = get_nearby_food_places(user_lat, user_lon, radius, food_type)
@@ -220,7 +143,7 @@ def generate_food_places(chat_id):
         BOT.send_message(
             chat_id,
             f"🍽️ **ALL NEARBY OPTIONS**\n\n{all_places}",
-            parse_mode='Markdown',
+            parse_mode='HTML',
             disable_web_page_preview=True,
             reply_markup=markup
         )
@@ -254,12 +177,22 @@ def positive_message(chat_id):
 
         conversation_history[chat_id] = conversation_history[chat_id][-6:]
 
+        daily_seed = datetime.now().strftime("%Y-%m-%d")
+
         system_content = "You are a helpful assistant. Keep responses concise."
-        message_content = f"""Greet me based on the time of the day and give me a different positive message. Add a quote and affirmation from the bible as to what God wants to tell me today. Use emoji just for this response. Go by this format:
-        Good morning [{get_user_username(chat_id) or 'friend'}]!\n\n
-        TODAY'S POSITIVE MESSAGE: [positive message]\n
-        WHAT GOD IS TELLING YOU TODAY: [quote] [Bible verse]\n
-        TODAY'S AFFIRMATION: [affirmation]"""
+        message_content = f"""
+            Greet me based on the current time of day. Use the date '{daily_seed}' as a seed to generate a **completely unique and different** positive message, Bible verse, and affirmation for today. The output must be different from any other day.
+
+            Format your response exactly like this:
+
+            Good morning [{get_user_username(chat_id) or 'friend'}]! 🌄
+
+            TODAY'S POSITIVE MESSAGE: [Message]
+
+            WHAT GOD IS TELLING YOU TODAY: [Quote] - [Book Chapter:Verse]
+
+            TODAY'S AFFIRMATION: [Affirmation]
+            """
 
         if chat_id not in conversation_history:
             conversation_history[chat_id] = [
@@ -341,100 +274,6 @@ def welcome(message):
     BOT.send_message(message.chat.id, "Type /help to see available commands.")
 ###################################################################################################################################################
 
-########################################################### ANNOUNCEMENT FUNCTIONS ################################################################
-# @BOT.message_handler(commands=['announcement'], func=OWNER)
-# def announce_command(message):
-#     """Start announcement process"""
-#     chat_id = message.chat.id
-
-#     all_chat_id = get_all_chat_ids()
-#     total_users = len(all_chat_id)
-
-#     if total_users == 0:
-#         BOT.send_message(chat_id, "❌ No users found in the database.")
-#         return
-    
-#     # Store announcement state
-#     user_states[chat_id] = 'awaiting_announcement'
-#     announcement_data[chat_id] = {
-#         'total_users': total_users,
-#         'users_sent': 0,
-#         'users_failed': 0,
-#         'message_text': None
-#     }
-
-#     BOT.send_message(
-#         chat_id,
-#         f"📢 Announcement Mode\n\n"
-#         f"Total users: {total_users}\n\n"
-#         "Please send the announcement message you want to broadcast:"
-#     )
-
-# @BOT.message_handler(func=lambda message: user_states.get(message.chat.id) == 'awaiting_announcement')
-# def handle_announcement_message(message):
-#     """Process the announcement message and start broadcasting"""
-#     chat_id = message.chat.id
-#     announcement_text = message.text
-    
-#     if not announcement_text.strip():
-#         BOT.send_message(chat_id, "❌ Announcement message cannot be empty.")
-#         user_states.pop(chat_id, None)
-#         announcement_data.pop(chat_id, None)
-#         return
-    
-#     # Store announcement text
-#     announcement_data[chat_id]['message_text'] = announcement_text
-    
-#     # Confirm before sending
-#     markup = types.InlineKeyboardMarkup()
-#     markup.add(
-#         types.InlineKeyboardButton("✅ Yes, Send to All", callback_data="confirm_announce"),
-#         types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_announce")
-#     )
-    
-#     total_users = announcement_data[chat_id]['total_users']
-    
-#     BOT.send_message(
-#         chat_id,
-#         f"📢 Confirm Announcement\n\n"
-#         f"Message: {announcement_text}\n\n"
-#         f"Recipients: {total_users} users\n\n"
-#         "Are you sure you want to send this announcement?",
-#         reply_markup=markup
-#     )
-
-# @BOT.callback_query_handler(func=lambda call: call.data in ["confirm_announce", "cancel_announce"])
-# def handle_announcement_confirmation(call):
-#     """Handle announcement confirmation"""
-#     chat_id = call.message.chat.id
-    
-#     if call.data == "cancel_announce":
-#         BOT.edit_message_text(
-#             "❌ Announcement cancelled.",
-#             chat_id=chat_id,
-#             message_id=call.message.message_id
-#         )
-#         user_states.pop(chat_id, None)
-#         announcement_data.pop(chat_id, None)
-#         return
-    
-#     # Start broadcasting
-#     BOT.edit_message_text(
-#         "📢 Sending announcements...\n\n"
-#         "Progress: 0%\n"
-#         "Sent: 0 | Failed: 0",
-#         chat_id=chat_id,
-#         message_id=call.message.message_id
-#     )
-    
-#     # Start broadcasting in a separate thread
-#     threading.Thread(
-#         target=broadcast_announcement,
-#         args=(chat_id, call.message.message_id)
-#     ).start()
-
-#################################################################################################################################################
-
 @BOT.message_handler(commands=['help'])
 def help_command(message):
     help_text = (
@@ -460,7 +299,7 @@ def find_food_places(message):
 
     pending_food_requests[chat_id] = {
         'message': message,
-        'radius': 500,  # Default radius
+        'radius': 400,  # Default radius
         'food_type': None
     }
 
@@ -484,15 +323,38 @@ def handle_location(message):
     # Get location name
     location_name = get_location_name(location.latitude, location.longitude)
 
-    BOT.send_message(
-        chat_id,
-        f"📍Location received!\n" 
-        f"📌 You're at: {location_name}\n\n"
-        f"Generating recommendations...",
-        reply_markup=types.ReplyKeyboardRemove()
+    BOT.send_message(chat_id, f"📍 Perfect! I see you're at: {location_name}", reply_markup=types.ReplyKeyboardRemove())
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("Very Close (100m)", callback_data="search_100"),
+        types.InlineKeyboardButton("Close (400m)", callback_data="search_400"),
+        types.InlineKeyboardButton("Far (1km)", callback_data="search_1000")
     )
 
-    generate_food_places(chat_id)
+    BOT.send_message(
+        chat_id,
+        f"🔍 How far should I search for food places?",
+        reply_markup=markup,
+    )
+
+@BOT.callback_query_handler(func=lambda call: call.data.startswith('search_'))
+def set_search_radius(call):
+    """Set search radius based on user selection"""
+    chat_id = call.message.chat.id
+
+    _, selected_radius = call.data.split('_')
+
+    if chat_id in pending_food_requests:
+        pending_food_requests[chat_id]['radius'] = selected_radius
+
+    BOT.edit_message_text(
+        f"🔍 Searching for food places within {selected_radius} meters...",
+        chat_id,
+        call.message.message_id
+    )
+
+    generate_food_places(chat_id, selected_radius)
 
 @BOT.callback_query_handler(func=lambda call: call.data == "random_pick")
 def random_pick(call):
